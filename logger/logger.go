@@ -6,9 +6,130 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
+
+// BannerService manages startup banners for services
+type BannerService struct {
+	mu      sync.RWMutex
+	banners map[string]string
+	colors  map[string]string
+	enabled bool
+}
+
+var bannerService = &BannerService{
+	banners: make(map[string]string),
+	colors:  make(map[string]string),
+	enabled: true,
+}
+
+// BannerOption configures the banner service
+type BannerOption func(*BannerService)
+
+// WithBannerEnabled enables or disables the banner
+func WithBannerEnabled(enabled bool) BannerOption {
+	return func(s *BannerService) {
+		s.enabled = enabled
+	}
+}
+
+// ConfigureBanner applies options to the global banner service
+func ConfigureBanner(opts ...BannerOption) {
+	for _, opt := range opts {
+		opt(bannerService)
+	}
+}
+
+// RegisterBanner registers a custom banner for a specific service.
+// The banner should not include ANSI codes - they will be applied automatically.
+func RegisterBanner(serviceName, banner string) {
+	bannerService.mu.Lock()
+	defer bannerService.mu.Unlock()
+	bannerService.banners[strings.ToLower(serviceName)] = banner
+}
+
+// RegisterBannerColor registers a custom color for a service's banner
+func RegisterBannerColor(serviceName, colorCode string) {
+	bannerService.mu.Lock()
+	defer bannerService.mu.Unlock()
+	bannerService.colors[strings.ToLower(serviceName)] = colorCode
+}
+
+// GetBanner returns the banner for a service
+func GetBanner(serviceName string) string {
+	bannerService.mu.RLock()
+	defer bannerService.mu.RUnlock()
+
+	banner, exists := bannerService.banners[strings.ToLower(serviceName)]
+	if !exists {
+		return ""
+	}
+	return banner
+}
+
+// GetBannerColor returns the color code for a service
+func GetBannerColor(serviceName string) string {
+	bannerService.mu.RLock()
+	defer bannerService.mu.RUnlock()
+
+	color, exists := bannerService.colors[strings.ToLower(serviceName)]
+	if !exists {
+		return ServiceColor(serviceName)
+	}
+	return color
+}
+
+// PrintBanner prints the startup banner for a service
+func PrintBanner(serviceName, version string) {
+	if !bannerService.enabled {
+		return
+	}
+
+	color := GetBannerColor(serviceName)
+	banner := GetBanner(serviceName)
+
+	coloredName := FormatServiceName(serviceName, true)
+	coloredBanner := Bold + color + banner + Reset
+
+	fmt.Println(coloredName)
+	fmt.Println(coloredBanner)
+	fmt.Printf("\n[%s] Version: %s | Starting up...\n\n",
+		strings.ToUpper(serviceName), version)
+}
+
+// PrintBannerWithMessage prints the startup banner with a custom message
+func PrintBannerWithMessage(serviceName, version, message string) {
+	if !bannerService.enabled {
+		return
+	}
+
+	color := GetBannerColor(serviceName)
+	banner := GetBanner(serviceName)
+
+	coloredName := FormatServiceName(serviceName, true)
+	coloredBanner := Bold + color + banner + Reset
+
+	fmt.Println(coloredName)
+	fmt.Println(coloredBanner)
+	fmt.Printf("\n[%s] Version: %s | %s\n\n",
+		strings.ToUpper(serviceName), version, message)
+}
+
+// DisableBanner disables the banner printing
+func DisableBanner() {
+	bannerService.mu.Lock()
+	defer bannerService.mu.Unlock()
+	bannerService.enabled = false
+}
+
+// EnableBanner enables the banner printing
+func EnableBanner() {
+	bannerService.mu.Lock()
+	defer bannerService.mu.Unlock()
+	bannerService.enabled = true
+}
 
 // ANSI color codes
 const (
