@@ -13,40 +13,130 @@ import (
 
 // Config represents the base configuration for a service
 type Config struct {
-	Server   ServerConfig
-	Database DatabaseConfig
-	Log      LogConfig
+	Server   ServerConfig   `yaml:"server" json:"server"`
+	Database DatabaseConfig `yaml:"database" json:"database"`
+	Log      LogConfig      `yaml:"log" json:"log"`
 }
 
 // ServerConfig represents server configuration
 type ServerConfig struct {
-	Port         string
-	Host         string
-	Environment  string
-	ReadTimeout  time.Duration
-	WriteTimeout time.Duration
+	Port         string        `yaml:"port" json:"port"`
+	Host         string        `yaml:"host" json:"host"`
+	Environment  string        `yaml:"environment" json:"environment"`
+	ReadTimeout  time.Duration `yaml:"read_timeout" json:"read_timeout"`
+	WriteTimeout time.Duration `yaml:"write_timeout" json:"write_timeout"`
 }
 
 // DatabaseConfig represents database configuration
 type DatabaseConfig struct {
-	Host            string
-	Port            string
-	PortInt         int
-	User            string
-	Password        string
-	Name            string
-	SSLMode         string
-	MaxOpenConns    int
-	MaxIdleConns    int
-	ConnMaxLifetime time.Duration
+	Host            string        `yaml:"host" json:"host"`
+	Port            string        `yaml:"port" json:"port"`
+	PortInt         int           `yaml:"port_int" json:"port_int"`
+	User            string        `yaml:"user" json:"user"`
+	Password        string        `yaml:"-" json:"-"` // Never serialize password
+	Name            string        `yaml:"name" json:"name"`
+	SSLMode         string        `yaml:"ssl_mode" json:"ssl_mode"`
+	MaxOpenConns    int           `yaml:"max_open_conns" json:"max_open_conns"`
+	MaxIdleConns    int           `yaml:"max_idle_conns" json:"max_idle_conns"`
+	ConnMaxLifetime time.Duration `yaml:"conn_max_lifetime" json:"conn_max_lifetime"`
 }
 
 // LogConfig represents logging configuration
 type LogConfig struct {
-	Level      string
-	JSONFormat bool
-	Enabled    bool
-	Debug      bool
+	Level      string `yaml:"level" json:"level"`
+	JSONFormat bool   `yaml:"json_format" json:"json_format"`
+	Enabled    bool   `yaml:"enabled" json:"enabled"`
+	Debug      bool   `yaml:"debug" json:"debug"`
+}
+
+// RedisConfig represents Redis configuration
+type RedisConfig struct {
+	Host         string        `yaml:"host" json:"host"`
+	Port         int           `yaml:"port" json:"port"`
+	Password     string        `yaml:"-" json:"-"` // Never serialize password
+	DB           int           `yaml:"db" json:"db"`
+	PoolSize     int           `yaml:"pool_size" json:"pool_size"`
+	MinIdleConns int           `yaml:"min_idle_conns" json:"min_idle_conns"`
+	DialTimeout  time.Duration `yaml:"dial_timeout" json:"dial_timeout"`
+	ReadTimeout  time.Duration `yaml:"read_timeout" json:"read_timeout"`
+	WriteTimeout time.Duration `yaml:"write_timeout" json:"write_timeout"`
+}
+
+// Options is a functional options pattern for Config
+type Options func(*Config)
+
+// WithDefaultConfig returns options that apply sensible defaults
+func WithDefaultConfig() Options {
+	return func(c *Config) {
+		if c.Server.Port == "" {
+			c.Server.Port = "8080"
+		}
+		if c.Server.Environment == "" {
+			c.Server.Environment = "development"
+		}
+		if c.Database.MaxOpenConns == 0 {
+			c.Database.MaxOpenConns = 25
+		}
+		if c.Database.MaxIdleConns == 0 {
+			c.Database.MaxIdleConns = 5
+		}
+		if c.Database.ConnMaxLifetime == 0 {
+			c.Database.ConnMaxLifetime = time.Hour
+		}
+		if c.Log.Level == "" {
+			c.Log.Level = "info"
+		}
+	}
+}
+
+// NewConfig creates a new Config with optional defaults applied
+func NewConfig(opts ...Options) *Config {
+	cfg := &Config{}
+	for _, opt := range opts {
+		opt(cfg)
+	}
+	return cfg
+}
+
+// Load loads configuration from multiple sources in order of priority:
+// 1. YAML file (lowest priority)
+// 2. Environment variables (highest priority)
+func Load(path string, opts ...Options) (*Config, error) {
+	cfg := &Config{}
+
+	// Load from YAML if provided
+	if path != "" {
+		if err := LoadYAMLWithEnv(path, cfg); err != nil {
+			return nil, fmt.Errorf("failed to load config from %s: %w", path, err)
+		}
+	}
+
+	// Apply environment variables
+	if host := os.Getenv("DB_HOST"); host != "" {
+		cfg.Database.Host = host
+	}
+	if port := os.Getenv("DB_PORT"); port != "" {
+		cfg.Database.Port = port
+	}
+	if name := os.Getenv("DB_NAME"); name != "" {
+		cfg.Database.Name = name
+	}
+	if user := os.Getenv("DB_USER"); user != "" {
+		cfg.Database.User = user
+	}
+	if password := os.Getenv("DB_PASSWORD"); password != "" {
+		cfg.Database.Password = password
+	}
+	if sslmode := os.Getenv("DB_SSL_MODE"); sslmode != "" {
+		cfg.Database.SSLMode = sslmode
+	}
+
+	// Apply options
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
+	return cfg, nil
 }
 
 // LoadEnv loads environment variables from .env file if present

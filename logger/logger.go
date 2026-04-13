@@ -6,20 +6,9 @@ import (
 	"log/slog"
 	"os"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 )
-
-// Default mesh banner
-const defaultBanner = `
-███╗   ███╗███████╗███████╗██╗  ██╗
-████╗ ████║██╔════╝██╔════╝██║  ██║
-██╔████╔██║█████╗  ███████╗███████║
-██║╚██╔╝██║██╔══╝  ╚════██║██╔══██║
-██║ ╚═╝ ██║███████╗███████║██║  ██║
-╚═╝     ╚═╝╚══════╝╚══════╝╚═╝  ╚═╝
-`
 
 // ANSI color codes
 const (
@@ -31,65 +20,6 @@ const (
 	Blue   = "\033[34m"
 	Cyan   = "\033[36m"
 )
-
-// customBanners allows registering custom service banners
-var customBanners = make(map[string]string)
-var bannersMutex sync.Mutex
-
-// RegisterBanner registers a custom banner for a specific service name.
-// This allows consumers to provide their own ASCII art banners.
-func RegisterBanner(serviceName, banner string) {
-	bannersMutex.Lock()
-	defer bannersMutex.Unlock()
-	customBanners[strings.ToLower(serviceName)] = banner
-}
-
-// ServiceLogo returns the colored ASCII art banner for a service.
-// If no custom banner is registered, returns the default mesh banner.
-func ServiceLogo(serviceName string) string {
-	bannersMutex.Lock()
-	defer bannersMutex.Unlock()
-
-	name := strings.ToLower(serviceName)
-	banner, exists := customBanners[name]
-	if !exists {
-		banner = defaultBanner
-	}
-
-	// Assign color per service using hash for consistency
-	var color string
-	color = ServiceColor(serviceName)
-
-	return Bold + color + banner + Reset
-}
-
-// PrintStartupBanner prints a startup banner with service logo and version.
-// If no custom banner is registered for the service, uses the default mesh banner.
-func PrintStartupBanner(serviceName string, version string) {
-	banner := ServiceLogo(serviceName)
-
-	// Add color to service name
-	coloredName := FormatServiceName(serviceName, true)
-
-	// Print banner with service name
-	fmt.Println(coloredName)
-	fmt.Println(banner)
-	fmt.Printf("\n[%s] Version: %s | Starting up...\n\n",
-		strings.ToUpper(serviceName), version)
-}
-
-// PrintBanner prints a custom banner with service name and version.
-// Use this for full control over the banner content.
-func PrintBanner(serviceName, version, banner string) {
-	coloredName := FormatServiceName(serviceName, true)
-	color := ServiceColor(serviceName)
-	coloredBanner := Bold + color + banner + Reset
-
-	fmt.Println(coloredName)
-	fmt.Println(coloredBanner)
-	fmt.Printf("\n[%s] Version: %s | Starting up...\n\n",
-		strings.ToUpper(serviceName), version)
-}
 
 // Level represents the logging level
 type Level int

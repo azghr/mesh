@@ -12,10 +12,10 @@ import (
 
 // ResilientClient combines circuit breaker and retry logic for resilient HTTP calls
 type ResilientClient struct {
-	httpClient      *http.Client
-	circuitBreaker  *CircuitBreaker
-	retryConfig     *RetryConfig
-	serviceName     string
+	httpClient     *http.Client
+	circuitBreaker *CircuitBreaker
+	retryConfig    *RetryConfig
+	serviceName    string
 }
 
 // ResilientClientConfig holds configuration for the resilient client
@@ -186,4 +186,81 @@ func (c *ResilientClient) CircuitBreaker() *CircuitBreaker {
 // ServiceName returns the service name
 func (c *ResilientClient) ServiceName() string {
 	return c.serviceName
+}
+
+// Put executes a PUT request with JSON body
+func (c *ResilientClient) Put(url string, body interface{}) (*http.Response, error) {
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal body: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPut, url, bytes.NewReader(jsonBody))
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	return c.Do(req)
+}
+
+// Delete executes a DELETE request
+func (c *ResilientClient) Delete(url string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodDelete, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	return c.Do(req)
+}
+
+// PutJSON executes a PUT request with JSON body and decodes the response
+func (c *ResilientClient) PutJSON(url string, body interface{}, result interface{}) error {
+	resp, err := c.Put(url, body)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	if err := json.Unmarshal(responseBody, result); err != nil {
+		return fmt.Errorf("failed to decode JSON: %w", err)
+	}
+
+	return nil
+}
+
+// DeleteJSON executes a DELETE request and decodes the response
+func (c *ResilientClient) DeleteJSON(url string, result interface{}) error {
+	resp, err := c.Delete(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	if result == nil {
+		return nil
+	}
+
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	if err := json.Unmarshal(responseBody, result); err != nil {
+		return fmt.Errorf("failed to decode JSON: %w", err)
+	}
+
+	return nil
 }

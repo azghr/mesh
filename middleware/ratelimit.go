@@ -3,6 +3,7 @@ package middleware
 import (
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -145,7 +146,7 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 		// Check if limit exceeded
 		if len(visitor.requests) > rl.rate {
 			// Set rate limit headers
-			w.Header().Set("X-RateLimit-Limit", string(rune(rl.rate)))
+			w.Header().Set("X-RateLimit-Limit", strconv.Itoa(rl.rate))
 			w.Header().Set("X-RateLimit-Remaining", "0")
 			w.Header().Set("X-RateLimit-Reset", visitor.lastReset.Add(rl.window).Format(time.RFC1123))
 			w.Header().Set("Retry-After", rl.window.String())
@@ -156,8 +157,8 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 
 		// Set rate limit headers for successful request
 		remaining := rl.rate - len(visitor.requests)
-		w.Header().Set("X-RateLimit-Limit", string(rune(rl.rate)))
-		w.Header().Set("X-RateLimit-Remaining", string(rune(remaining)))
+		w.Header().Set("X-RateLimit-Limit", strconv.Itoa(rl.rate))
+		w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(remaining))
 		w.Header().Set("X-RateLimit-Reset", visitor.lastReset.Add(rl.window).Format(time.RFC1123))
 
 		next.ServeHTTP(w, r)

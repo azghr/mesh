@@ -9,15 +9,41 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// ContextKey is the type for context keys
-type ContextKey string
+// contextKey is a type-safe key for context values
+type contextKey string
 
 const (
-	// RoleKey is the context key for storing user roles
-	RoleKey ContextKey = "role"
-	// UserIDKey is the context key for storing user IDs
-	UserIDKey ContextKey = "user_id"
+	// roleKey is the context key for storing user roles
+	roleKey contextKey = "role"
+	// userIDKey is the context key for storing user IDs
+	userIDKey contextKey = "user_id"
 )
+
+// WithUserID adds a user ID to the context
+func WithUserID(ctx context.Context, userID string) context.Context {
+	return context.WithValue(ctx, userIDKey, userID)
+}
+
+// GetUserID retrieves the user ID from the context
+func GetUserID(ctx context.Context) string {
+	if uid, ok := ctx.Value(userIDKey).(string); ok {
+		return uid
+	}
+	return ""
+}
+
+// WithRole adds a role to the context
+func WithRole(ctx context.Context, role Role) context.Context {
+	return context.WithValue(ctx, roleKey, role)
+}
+
+// GetRole retrieves the role from the context
+func GetRole(ctx context.Context) (Role, bool) {
+	if role, ok := ctx.Value(roleKey).(Role); ok {
+		return role, true
+	}
+	return "", false
+}
 
 // RequirePermission creates an HTTP middleware that requires a specific permission
 func (r *RBAC) RequirePermission(perm Permission) func(http.Handler) http.Handler {
@@ -26,7 +52,7 @@ func (r *RBAC) RequirePermission(perm Permission) func(http.Handler) http.Handle
 			ctx := req.Context()
 
 			// Get user ID from context (set by auth middleware)
-			userID, ok := ctx.Value(UserIDKey).(string)
+			userID, ok := ctx.Value(userIDKey).(string)
 			if !ok || userID == "" {
 				http.Error(w, "unauthorized: missing user ID", http.StatusUnauthorized)
 				return
@@ -50,7 +76,7 @@ func (r *RBAC) RequireAnyPermission(perms ...Permission) func(http.Handler) http
 			ctx := req.Context()
 
 			// Get user ID from context
-			userID, ok := ctx.Value(UserIDKey).(string)
+			userID, ok := ctx.Value(userIDKey).(string)
 			if !ok || userID == "" {
 				http.Error(w, "unauthorized: missing user ID", http.StatusUnauthorized)
 				return
@@ -81,7 +107,7 @@ func (r *RBAC) RequireAllPermissions(perms ...Permission) func(http.Handler) htt
 			ctx := req.Context()
 
 			// Get user ID from context
-			userID, ok := ctx.Value(UserIDKey).(string)
+			userID, ok := ctx.Value(userIDKey).(string)
 			if !ok || userID == "" {
 				http.Error(w, "unauthorized: missing user ID", http.StatusUnauthorized)
 				return
@@ -112,7 +138,7 @@ func (r *RBAC) RequireRole(roles ...Role) func(http.Handler) http.Handler {
 			ctx := req.Context()
 
 			// Get user ID from context
-			userID, ok := ctx.Value(UserIDKey).(string)
+			userID, ok := ctx.Value(userIDKey).(string)
 			if !ok || userID == "" {
 				http.Error(w, "unauthorized: missing user ID", http.StatusUnauthorized)
 				return
@@ -153,7 +179,7 @@ func (r *RBAC) GRPCRequirePermission(perm Permission) grpc.UnaryServerIntercepto
 		handler grpc.UnaryHandler,
 	) (interface{}, error) {
 		// Get user ID from context (set by auth middleware)
-		userID, ok := ctx.Value(UserIDKey).(string)
+		userID, ok := ctx.Value(userIDKey).(string)
 		if !ok || userID == "" {
 			return nil, status.Error(codes.Unauthenticated, "missing user ID")
 		}
@@ -176,7 +202,7 @@ func (r *RBAC) GRPCRequireAnyPermission(perms ...Permission) grpc.UnaryServerInt
 		handler grpc.UnaryHandler,
 	) (interface{}, error) {
 		// Get user ID from context
-		userID, ok := ctx.Value(UserIDKey).(string)
+		userID, ok := ctx.Value(userIDKey).(string)
 		if !ok || userID == "" {
 			return nil, status.Error(codes.Unauthenticated, "missing user ID")
 		}
@@ -205,7 +231,7 @@ func (r *RBAC) GRPCRequireRole(roles ...Role) grpc.UnaryServerInterceptor {
 		handler grpc.UnaryHandler,
 	) (interface{}, error) {
 		// Get user ID from context
-		userID, ok := ctx.Value(UserIDKey).(string)
+		userID, ok := ctx.Value(userIDKey).(string)
 		if !ok || userID == "" {
 			return nil, status.Error(codes.Unauthenticated, "missing user ID")
 		}
