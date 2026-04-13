@@ -1,5 +1,5 @@
 // Package database provides advanced database connection pooling with metrics
-// and health monitoring for all Lumex services.
+// and health monitoring for all services.
 //
 // This package extends the basic database functionality with production-ready
 // connection pooling, metrics collection, and observability.
@@ -108,6 +108,7 @@ type ManagedPool struct {
 	startTime time.Time
 	mu        sync.RWMutex
 	closed    bool
+	stopCh    chan struct{}
 }
 
 // PoolMetrics collects connection pool metrics
@@ -187,6 +188,7 @@ func (pm *PoolManager) GetPool(name string, cfg Config, poolCfg PoolConfig) (*Ma
 		metrics:   &PoolMetrics{},
 		startTime: time.Now(),
 		closed:    false,
+		stopCh:    make(chan struct{}),
 	}
 
 	// Start health checks if enabled
@@ -249,18 +251,23 @@ func (mp *ManagedPool) collectMetrics() {
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		stats := mp.Pool.Stats()
+	for {
+		select {
+		case <-ticker.C:
+			stats := mp.Pool.Stats()
 
-		mp.mu.Lock()
-		mp.metrics.TotalConnections = int64(stats.MaxOpenConnections)
-		mp.metrics.IdleConnections = int64(stats.Idle)
-		mp.metrics.InUseConnections = int64(stats.InUse)
-		mp.metrics.WaitCount = stats.WaitCount
-		mp.metrics.WaitDuration = stats.WaitDuration
-		mp.metrics.MaxIdleClosed = stats.MaxIdleClosed
-		mp.metrics.MaxLifetimeClosed = stats.MaxLifetimeClosed
-		mp.mu.Unlock()
+			mp.mu.Lock()
+			mp.metrics.TotalConnections = int64(stats.MaxOpenConnections)
+			mp.metrics.IdleConnections = int64(stats.Idle)
+			mp.metrics.InUseConnections = int64(stats.InUse)
+			mp.metrics.WaitCount = stats.WaitCount
+			mp.metrics.WaitDuration = stats.WaitDuration
+			mp.metrics.MaxIdleClosed = stats.MaxIdleClosed
+			mp.metrics.MaxLifetimeClosed = stats.MaxLifetimeClosed
+			mp.mu.Unlock()
+		case <-mp.stopCh:
+			return
+		}
 	}
 }
 
@@ -273,20 +280,25 @@ func (mp *ManagedPool) runHealthChecks() {
 	ticker := time.NewTicker(mp.config.HealthCheckInterval)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		ctx, cancel := context.WithTimeout(context.Background(), mp.config.ConnTimeout)
-		err := mp.Pool.Ping(ctx)
-		cancel()
+	for {
+		select {
+		case <-ticker.C:
+			ctx, cancel := context.WithTimeout(context.Background(), mp.config.ConnTimeout)
+			err := mp.Pool.Ping(ctx)
+			cancel()
 
-		mp.mu.Lock()
-		mp.metrics.lastHealthCheck = time.Now()
-		mp.metrics.healthCheckPassed = (err == nil)
-		mp.mu.Unlock()
+			mp.mu.Lock()
+			mp.metrics.lastHealthCheck = time.Now()
+			mp.metrics.healthCheckPassed = (err == nil)
+			mp.mu.Unlock()
 
-		if err != nil && mp.config.Logger != nil {
-			mp.config.Logger.WithError(err).
-				WithField("pool", mp.config.ServiceName).
-				Warn("Database health check failed")
+			if err != nil && mp.config.Logger != nil {
+				mp.config.Logger.WithError(err).
+					WithField("pool", mp.config.ServiceName).
+					Warn("Database health check failed")
+			}
+		case <-mp.stopCh:
+			return
 		}
 	}
 }
@@ -337,6 +349,10 @@ func (mp *ManagedPool) Close() error {
 	}
 
 	mp.closed = true
+
+	// Signal background goroutines to stop
+	close(mp.stopCh)
+
 	return mp.Pool.Close()
 }
 

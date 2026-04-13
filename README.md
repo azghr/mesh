@@ -72,10 +72,6 @@ app.Use(middleware.RequestID())
 app.Use(middleware.Logger(log))
 ```
 
-## Project Status
-
-This package is extracted from the lumex project and is being prepared for open-source release.
-
 ## License
 
 MIT License - see LICENSE file for details.

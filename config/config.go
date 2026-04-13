@@ -6,6 +6,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/joho/godotenv"
+	"gopkg.in/yaml.v3"
 )
 
 // Config represents the base configuration for a service
@@ -49,9 +52,20 @@ type LogConfig struct {
 // LoadEnv loads environment variables from .env file if present
 // Returns true if .env was loaded, false otherwise
 func LoadEnv() bool {
-	// Check if godotenv is available
-	// For now, just return false - services can implement their own .env loading
-	return false
+	err := godotenv.Load()
+	return err == nil
+}
+
+// LoadEnvFrom loads environment variables from a specific .env file
+func LoadEnvFrom(path string) bool {
+	err := godotenv.Load(path)
+	return err == nil
+}
+
+// LoadEnvOverride loads environment variables from .env file and overrides existing vars
+func LoadEnvOverride() bool {
+	err := godotenv.Overload()
+	return err == nil
 }
 
 // GetEnv returns the value of an environment variable or a default value
@@ -217,4 +231,23 @@ func GetLogLevel(cfg LogConfig) string {
 	}
 
 	return "info"
+}
+
+// LoadYAML loads configuration from a YAML file
+func LoadYAML(path string, out interface{}) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("failed to read config file: %w", err)
+	}
+	return yaml.Unmarshal(data, out)
+}
+
+// LoadYAMLWithEnv loads configuration from a YAML file and expands environment variables
+func LoadYAMLWithEnv(path string, out interface{}) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("failed to read config file: %w", err)
+	}
+	expanded := os.ExpandEnv(string(data))
+	return yaml.Unmarshal([]byte(expanded), out)
 }

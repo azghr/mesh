@@ -13,6 +13,9 @@ package middleware
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -136,18 +139,26 @@ func logRequest(serviceName, correlationID string, r *http.Request, duration tim
 	)
 }
 
-// generateUUID generates a random UUID string (simplified implementation)
+// generateUUID generates a cryptographically secure UUID v4
 func generateUUID() string {
-	// Simple UUID v4-like generation
-	// In production, use github.com/google/uuid or similar
-	return time.Now().Format("20060102150405") + "-" + randomString(8)
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return time.Now().Format("20060102150405") + "-" + randomFallback(8)
+	}
+	return formatUUID(b)
 }
 
-func randomString(length int) string {
-	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
-	b := make([]byte, length)
-	for i := range b {
-		b[i] = charset[time.Now().UnixNano()%int64(len(charset))]
+func formatUUID(b []byte) string {
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
+		b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
+}
+
+func randomFallback(length int) string {
+	b := make([]byte, (length+1)/2)
+	if _, err := rand.Read(b); err != nil {
+		for i := range b {
+			b[i] = byte(time.Now().UnixNano() & 0xff)
+		}
 	}
-	return string(b)
+	return hex.EncodeToString(b)[:length]
 }

@@ -1,4 +1,4 @@
-// Package cache provides caching utilities for all Lumex services.
+// Package cache provides caching utilities for all services.
 //
 // This package implements a Redis-based caching layer with support for
 // cache invalidation, metrics, and automatic serialization.
@@ -33,10 +33,10 @@ var (
 
 // Cache provides caching functionality with Redis backend
 type Cache struct {
-	client      RedisClient
-	defaultTTL  time.Duration
-	keyPrefix   string
-	metrics     *Metrics
+	client     RedisClient
+	defaultTTL time.Duration
+	keyPrefix  string
+	metrics    *Metrics
 }
 
 // RedisClient interface defines the required Redis methods for caching
@@ -53,11 +53,11 @@ type RedisClient interface {
 
 // Metrics tracks cache performance
 type Metrics struct {
-	Hits   int64
-	Misses int64
-	Sets   int64
+	Hits    int64
+	Misses  int64
+	Sets    int64
 	Deletes int64
-	Errors int64
+	Errors  int64
 }
 
 // New creates a new cache with the given Redis client
@@ -188,7 +188,7 @@ func (c *Cache) GetOrSet(ctx context.Context, key string, dest interface{}, ttl 
 		return nil // Cache hit
 	}
 
-	if err != nil && err != ErrCacheMiss {
+	if err != ErrCacheMiss {
 		return err // Real error
 	}
 
@@ -221,7 +221,7 @@ func (c *Cache) GetOrSetJSON(ctx context.Context, key string, dest interface{}, 
 		return nil // Cache hit
 	}
 
-	if err != nil && err != ErrCacheMiss {
+	if err != ErrCacheMiss {
 		return err // Real error
 	}
 

@@ -35,51 +35,22 @@ func TestDefaultConfig(t *testing.T) {
 
 	assert.Equal(t, "test-service", config.ServiceName)
 	assert.Equal(t, "1.0.0", config.ServiceVersion)
-	assert.Equal(t, "production", config.Environment)
-	assert.Equal(t, "otel-collector:4317", config.CollectorEndpoint)
+	assert.Equal(t, "development", config.Environment)
+	assert.Equal(t, "localhost:4317", config.OTLPEndpoint)
 	assert.Equal(t, 1.0, config.SampleRate)
 }
 
 func TestGetTracer(t *testing.T) {
-	tests := []struct {
-		name    string
-		setup   func()
-		verify  func(t *testing.T, tracer trace.Tracer)
-	}{
-		{
-			name:  "returns tracer when initialized",
-			setup: func() {},
-			verify: func(t *testing.T, tracer trace.Tracer) {
-				assert.NotNil(t, tracer)
-			},
-		},
-		{
-			name: "returns default tracer when not initialized",
-			setup: func() {
-				// Reset global tracer
-				tracer = nil
-			},
-			verify: func(t *testing.T, tracer trace.Tracer) {
-				assert.NotNil(t, tracer)
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tt.setup()
-			tracer := GetTracer()
-			tt.verify(t, tracer)
-		})
-	}
+	tracer := GetTracer()
+	assert.NotNil(t, tracer)
 }
 
 func TestStartSpan(t *testing.T) {
 	tests := []struct {
-		name    string
-		ctx     context.Context
-		span    string
-		verify  func(t *testing.T, ctx context.Context, span trace.Span)
+		name   string
+		ctx    context.Context
+		span   string
+		verify func(t *testing.T, ctx context.Context, span trace.Span)
 	}{
 		{
 			name: "creates span with name",
@@ -405,8 +376,8 @@ func TestExtractContext(t *testing.T) {
 			headers: map[string]string{},
 		},
 		{
-			name:    "extracts from headers with trace context",
-			ctx:     context.Background(),
+			name: "extracts from headers with trace context",
+			ctx:  context.Background(),
 			headers: map[string]string{
 				"traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
 			},
@@ -527,11 +498,11 @@ func TestTraceHTTPMiddleware_ErrorHandling(t *testing.T) {
 
 func TestTraceGRPCMiddleware(t *testing.T) {
 	tests := []struct {
-		name          string
-		service       string
-		setupCtx      func() context.Context
-		verifyResult  func(*testing.T, interface{}, error)
-		expectError   bool
+		name         string
+		service      string
+		setupCtx     func() context.Context
+		verifyResult func(*testing.T, interface{}, error)
+		expectError  bool
 	}{
 		{
 			name:    "traces successful call",

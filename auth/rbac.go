@@ -112,6 +112,9 @@ type CachedRoleStore struct {
 	cache      map[string]cacheEntry
 	cacheMutex sync.RWMutex
 	ttl        time.Duration
+	stopCh     chan struct{}
+	stopped    bool
+	stoppedMu  sync.RWMutex
 }
 
 type cacheEntry struct {
@@ -122,15 +125,27 @@ type cacheEntry struct {
 // NewCachedRoleStore creates a new cached role store with the specified TTL
 func NewCachedRoleStore(store RoleStore, ttl time.Duration) *CachedRoleStore {
 	cachedStore := &CachedRoleStore{
-		store: store,
-		cache: make(map[string]cacheEntry),
-		ttl:   ttl,
+		store:  store,
+		cache:  make(map[string]cacheEntry),
+		ttl:    ttl,
+		stopCh: make(chan struct{}),
 	}
 
 	// Start background cleanup goroutine
 	go cachedStore.cleanup()
 
 	return cachedStore
+}
+
+// Stop stops the background cleanup goroutine
+func (s *CachedRoleStore) Stop() {
+	s.stoppedMu.Lock()
+	defer s.stoppedMu.Unlock()
+	if s.stopped {
+		return
+	}
+	s.stopped = true
+	close(s.stopCh)
 }
 
 // GetUserRole retrieves the user role from cache or backing store
@@ -167,15 +182,20 @@ func (s *CachedRoleStore) cleanup() {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		s.cacheMutex.Lock()
-		now := time.Now()
-		for userID, entry := range s.cache {
-			if now.After(entry.expiresAt) {
-				delete(s.cache, userID)
+	for {
+		select {
+		case <-ticker.C:
+			s.cacheMutex.Lock()
+			now := time.Now()
+			for userID, entry := range s.cache {
+				if now.After(entry.expiresAt) {
+					delete(s.cache, userID)
+				}
 			}
+			s.cacheMutex.Unlock()
+		case <-s.stopCh:
+			return
 		}
-		s.cacheMutex.Unlock()
 	}
 }
 

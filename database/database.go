@@ -1,4 +1,4 @@
-// Package database provides shared database connection utilities for all Lumex services.
+// Package database provides shared database connection utilities for all services.
 //
 // This package implements a connection pool pattern for database connections with proper
 // connection pooling, configuration, and lifecycle management using dependency injection.
@@ -178,4 +178,3 @@ func Close() error {
 type ConfigAdapter interface {
 	ToDatabaseConfig() Config
 }
-

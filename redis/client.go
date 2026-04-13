@@ -1,4 +1,4 @@
-// Package redis provides shared Redis client utilities for all Lumex services.
+// Package redis provides shared Redis client utilities for all services.
 //
 // This package implements a Redis client with connection pooling,
 // health checks, and proper lifecycle management.

@@ -1,4 +1,4 @@
-// Package lock provides distributed locking utilities for all Lumex services.
+// Package lock provides distributed locking utilities for all services.
 //
 // This package implements distributed locking using Redis with proper
 // error handling, automatic retry, and lock expiration.

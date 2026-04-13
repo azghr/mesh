@@ -5,6 +5,7 @@ go 1.25.1
 require (
 	github.com/alicebob/miniredis/v2 v2.37.0
 	github.com/gofiber/fiber/v2 v2.52.12
+	github.com/joho/godotenv v1.5.1
 	github.com/lib/pq v1.12.3
 	github.com/prometheus/client_golang v1.20.5
 	github.com/redis/go-redis/v9 v9.18.0
@@ -16,6 +17,7 @@ require (
 	go.opentelemetry.io/otel/sdk v1.41.0
 	go.opentelemetry.io/otel/trace v1.41.0
 	google.golang.org/grpc v1.74.2
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -91,5 +93,4 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20250818200422-3122310a409c // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250818200422-3122310a409c // indirect
 	google.golang.org/protobuf v1.36.7 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
