@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -37,6 +38,7 @@ type Cache struct {
 	defaultTTL time.Duration
 	keyPrefix  string
 	metrics    *Metrics
+	mu         sync.Mutex
 }
 
 // RedisClient interface defines the required Redis methods for caching
@@ -101,6 +103,36 @@ func (c *Cache) formatKey(key string) string {
 	return c.keyPrefix + key
 }
 
+func (c *Cache) incHits() {
+	c.mu.Lock()
+	c.metrics.Hits++
+	c.mu.Unlock()
+}
+
+func (c *Cache) incMisses() {
+	c.mu.Lock()
+	c.metrics.Misses++
+	c.mu.Unlock()
+}
+
+func (c *Cache) incErrors() {
+	c.mu.Lock()
+	c.metrics.Errors++
+	c.mu.Unlock()
+}
+
+func (c *Cache) incSets(n int64) {
+	c.mu.Lock()
+	c.metrics.Sets += n
+	c.mu.Unlock()
+}
+
+func (c *Cache) incDeletes() {
+	c.mu.Lock()
+	c.metrics.Deletes++
+	c.mu.Unlock()
+}
+
 // Get retrieves a value from the cache and unmarshals it into dest
 func (c *Cache) Get(ctx context.Context, key string, dest interface{}) error {
 	cacheKey := c.formatKey(key)
@@ -108,19 +140,19 @@ func (c *Cache) Get(ctx context.Context, key string, dest interface{}) error {
 	val, err := c.client.Get(ctx, cacheKey).Result()
 	if err != nil {
 		if err == redis.Nil {
-			c.metrics.Misses++
+			c.incMisses()
 			return ErrCacheMiss
 		}
-		c.metrics.Errors++
+		c.incErrors()
 		return fmt.Errorf("failed to get from cache: %w", err)
 	}
 
 	if err := json.Unmarshal([]byte(val), dest); err != nil {
-		c.metrics.Errors++
+		c.incErrors()
 		return fmt.Errorf("%w: %v", ErrInvalidType, err)
 	}
 
-	c.metrics.Hits++
+	c.incHits()
 	return nil
 }
 
@@ -134,16 +166,16 @@ func (c *Cache) Set(ctx context.Context, key string, value interface{}, ttl time
 
 	data, err := json.Marshal(value)
 	if err != nil {
-		c.metrics.Errors++
+		c.incErrors()
 		return fmt.Errorf("failed to marshal value: %w", err)
 	}
 
 	if err := c.client.Set(ctx, cacheKey, data, ttl).Err(); err != nil {
-		c.metrics.Errors++
+		c.incErrors()
 		return fmt.Errorf("failed to set in cache: %w", err)
 	}
 
-	c.metrics.Sets++
+	c.incSets(1)
 	return nil
 }
 
@@ -159,11 +191,11 @@ func (c *Cache) Delete(ctx context.Context, keys ...string) error {
 	}
 
 	if err := c.client.Del(ctx, cacheKeys...).Err(); err != nil {
-		c.metrics.Errors++
+		c.incErrors()
 		return fmt.Errorf("failed to delete from cache: %w", err)
 	}
 
-	c.metrics.Deletes++
+	c.incDeletes()
 	return nil
 }
 
@@ -173,7 +205,7 @@ func (c *Cache) Exists(ctx context.Context, key string) (bool, error) {
 
 	count, err := c.client.Exists(ctx, cacheKey).Result()
 	if err != nil {
-		c.metrics.Errors++
+		c.incErrors()
 		return false, fmt.Errorf("failed to check cache existence: %w", err)
 	}
 
@@ -200,8 +232,7 @@ func (c *Cache) GetOrSet(ctx context.Context, key string, dest interface{}, ttl 
 
 	// Store in cache (don't fail the request if caching fails)
 	if cacheErr := c.Set(ctx, key, value, ttl); cacheErr != nil {
-		// Log but don't fail the request
-		c.metrics.Errors++
+		c.incErrors()
 	}
 
 	// Set dest value
@@ -233,8 +264,7 @@ func (c *Cache) GetOrSetJSON(ctx context.Context, key string, dest interface{}, 
 
 	// Store in cache (don't fail the request if caching fails)
 	if cacheErr := c.Set(ctx, key, data, ttl); cacheErr != nil {
-		// Log but don't fail the request
-		c.metrics.Errors++
+		c.incErrors()
 	}
 
 	// Set dest value
@@ -246,16 +276,16 @@ func (c *Cache) GetOrSetString(ctx context.Context, key string, ttl time.Duratio
 	// Try to get from cache
 	val, err := c.client.Get(ctx, c.formatKey(key)).Result()
 	if err == nil {
-		c.metrics.Hits++
+		c.incHits()
 		return val, nil // Cache hit
 	}
 
 	if err != redis.Nil {
-		c.metrics.Errors++
+		c.incErrors()
 		return "", fmt.Errorf("failed to get from cache: %w", err)
 	}
 
-	c.metrics.Misses++
+	c.incMisses()
 
 	// Cache miss - compute value
 	value, err := fn()
@@ -265,7 +295,7 @@ func (c *Cache) GetOrSetString(ctx context.Context, key string, ttl time.Duratio
 
 	// Store in cache (don't fail the request if caching fails)
 	if cacheErr := c.Set(ctx, key, value, ttl); cacheErr != nil {
-		c.metrics.Errors++
+		c.incErrors()
 	}
 
 	return value, nil
@@ -277,16 +307,16 @@ func (c *Cache) InvalidateByPrefix(ctx context.Context, prefix string) error {
 
 	keys, err := c.client.Keys(ctx, fullPrefix+"*").Result()
 	if err != nil {
-		c.metrics.Errors++
+		c.incErrors()
 		return fmt.Errorf("failed to find keys by prefix: %w", err)
 	}
 
 	if len(keys) > 0 {
 		if err := c.client.Del(ctx, keys...).Err(); err != nil {
-			c.metrics.Errors++
+			c.incErrors()
 			return fmt.Errorf("failed to delete keys by prefix: %w", err)
 		}
-		c.metrics.Deletes++
+		c.incDeletes()
 	}
 
 	return nil
@@ -297,7 +327,7 @@ func (c *Cache) SetTTL(ctx context.Context, key string, ttl time.Duration) error
 	cacheKey := c.formatKey(key)
 
 	if err := c.client.Expire(ctx, cacheKey, ttl).Err(); err != nil {
-		c.metrics.Errors++
+		c.incErrors()
 		return fmt.Errorf("failed to set TTL: %w", err)
 	}
 
@@ -310,7 +340,7 @@ func (c *Cache) GetTTL(ctx context.Context, key string) (time.Duration, error) {
 
 	ttl, err := c.client.TTL(ctx, cacheKey).Result()
 	if err != nil {
-		c.metrics.Errors++
+		c.incErrors()
 		return 0, fmt.Errorf("failed to get TTL: %w", err)
 	}
 
@@ -329,7 +359,9 @@ func (c *Cache) Metrics() *Metrics {
 
 // ResetMetrics resets the cache metrics
 func (c *Cache) ResetMetrics() {
+	c.mu.Lock()
 	c.metrics = &Metrics{}
+	c.mu.Unlock()
 }
 
 // HitRate returns the cache hit rate as a percentage
@@ -347,7 +379,6 @@ func (c *Cache) Warmup(ctx context.Context, data map[string]interface{}, ttl tim
 		ttl = c.defaultTTL
 	}
 
-	// Use pipeline for better performance
 	pipe := c.client.Pipeline()
 
 	for key, value := range data {
@@ -355,7 +386,7 @@ func (c *Cache) Warmup(ctx context.Context, data map[string]interface{}, ttl tim
 
 		jsonData, err := json.Marshal(value)
 		if err != nil {
-			c.metrics.Errors++
+			c.incErrors()
 			continue
 		}
 
@@ -363,11 +394,11 @@ func (c *Cache) Warmup(ctx context.Context, data map[string]interface{}, ttl tim
 	}
 
 	if _, err := pipe.Exec(ctx); err != nil {
-		c.metrics.Errors++
+		c.incErrors()
 		return fmt.Errorf("failed to warmup cache: %w", err)
 	}
 
-	c.metrics.Sets += int64(len(data))
+	c.incSets(int64(len(data)))
 	return nil
 }
 
@@ -377,7 +408,6 @@ func (c *Cache) MultiGet(ctx context.Context, keys []string, dest map[string]int
 		return nil
 	}
 
-	// Use pipeline for better performance
 	pipe := c.client.Pipeline()
 	cmds := make([]*redis.StringCmd, len(keys))
 
@@ -388,7 +418,7 @@ func (c *Cache) MultiGet(ctx context.Context, keys []string, dest map[string]int
 	}
 
 	if _, err := pipe.Exec(ctx); err != nil {
-		c.metrics.Errors++
+		c.incErrors()
 		return fmt.Errorf("failed to multi-get from cache: %w", err)
 	}
 
@@ -396,22 +426,22 @@ func (c *Cache) MultiGet(ctx context.Context, keys []string, dest map[string]int
 		val, err := cmd.Result()
 		if err != nil {
 			if err != redis.Nil {
-				c.metrics.Errors++
+				c.incErrors()
 			}
-			c.metrics.Misses++
+			c.incMisses()
 			continue
 		}
 
 		if dest != nil {
 			var destValue interface{}
 			if err := json.Unmarshal([]byte(val), &destValue); err != nil {
-				c.metrics.Errors++
+				c.incErrors()
 				continue
 			}
 			dest[keys[i]] = destValue
 		}
 
-		c.metrics.Hits++
+		c.incHits()
 	}
 
 	return nil
@@ -427,7 +457,6 @@ func (c *Cache) MultiSet(ctx context.Context, data map[string]interface{}, ttl t
 		ttl = c.defaultTTL
 	}
 
-	// Use pipeline for better performance
 	pipe := c.client.Pipeline()
 
 	for key, value := range data {
@@ -435,7 +464,7 @@ func (c *Cache) MultiSet(ctx context.Context, data map[string]interface{}, ttl t
 
 		jsonData, err := json.Marshal(value)
 		if err != nil {
-			c.metrics.Errors++
+			c.incErrors()
 			continue
 		}
 
@@ -443,10 +472,10 @@ func (c *Cache) MultiSet(ctx context.Context, data map[string]interface{}, ttl t
 	}
 
 	if _, err := pipe.Exec(ctx); err != nil {
-		c.metrics.Errors++
+		c.incErrors()
 		return fmt.Errorf("failed to multi-set in cache: %w", err)
 	}
 
-	c.metrics.Sets += int64(len(data))
+	c.incSets(int64(len(data)))
 	return nil
 }

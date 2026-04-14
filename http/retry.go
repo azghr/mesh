@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"net"
+	"net/url"
+	"strings"
 	"time"
 )
 
@@ -250,8 +253,10 @@ func IsNetworkError(err error) bool {
 	if err == nil {
 		return false
 	}
-	// Add specific network error checks here
-	// For now, we'll rely on explicit retryable errors
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return netErr.Temporary() || netErr.Timeout()
+	}
 	return false
 }
 
@@ -260,7 +265,16 @@ func IsTimeoutError(err error) bool {
 	if err == nil {
 		return false
 	}
-	// Add specific timeout error checks here
-	// For now, we'll rely on explicit retryable errors
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return netErr.Timeout()
+	}
+	if strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "deadline") {
+		return true
+	}
+	urlErr, ok := err.(*url.Error)
+	if ok && urlErr.Timeout() {
+		return true
+	}
 	return false
 }

@@ -162,13 +162,15 @@ func Connect(cfg Config) (*sql.DB, error) {
 }
 
 // GetInstance returns the current database instance.
-// Deprecated: This is a no-op. Use NewPool to create a pool.
+// Deprecated: This function always returns nil. Use dependency injection with NewPool instead.
+// This exists for backward compatibility only.
 func GetInstance() *sql.DB {
 	return nil
 }
 
 // Close closes the database connection if it is open.
-// Deprecated: This is a no-op. Use Pool.Close() instead.
+// Deprecated: This function always returns nil. Use Pool.Close() instead.
+// This exists for backward compatibility only.
 func Close() error {
 	return nil
 }

@@ -53,16 +53,16 @@ func DefaultCircuitBreakerConfig() *CircuitBreakerConfig {
 
 // CircuitBreaker implements the circuit breaker pattern
 type CircuitBreaker struct {
-	mu               sync.RWMutex
-	config           *CircuitBreakerConfig
-	state            CircuitState
-	failureCount     int
-	successCount     int
-	halfOpenCalls    int
-	lastFailureTime  time.Time
-	lastStateChange  time.Time
-	nextAttempt      time.Time
-	onStateChange    func(from, to CircuitState)
+	mu              sync.RWMutex
+	config          *CircuitBreakerConfig
+	state           CircuitState
+	failureCount    int
+	successCount    int
+	halfOpenCalls   int
+	lastFailureTime time.Time
+	lastStateChange time.Time
+	nextAttempt     time.Time
+	onStateChange   func(from, to CircuitState)
 }
 
 // NewCircuitBreaker creates a new circuit breaker with default configuration
@@ -180,7 +180,9 @@ func (cb *CircuitBreaker) onSuccess() {
 	}
 }
 
-// setState changes the state and calls the callback if set
+// setState changes the state and calls the callback if set.
+// Callback is invoked as a goroutine to avoid deadlocks since setState
+// may be called while holding the lock.
 func (cb *CircuitBreaker) setState(newState CircuitState) {
 	if cb.state != newState {
 		oldState := cb.state

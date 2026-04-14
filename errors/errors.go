@@ -49,6 +49,13 @@ type Logger interface {
 	WithError(err error) Logger
 }
 
+type contextKey string
+
+const (
+	requestIDKey contextKey = "request_id"
+	userIDKey    contextKey = "user_id"
+)
+
 // AppError represents a structured application error
 type AppError struct {
 	Type        ErrorType      `json:"type"`
@@ -315,13 +322,21 @@ func GetAppError(err error) (*AppError, bool) {
 func FromContext(ctx context.Context, errorType ErrorType, code, message string) *AppError {
 	err := New(errorType, code, message)
 
-	if requestID := ctx.Value("request_id"); requestID != nil {
+	if requestID := ctx.Value(requestIDKey); requestID != nil {
+		if rid, ok := requestID.(string); ok {
+			err.RequestID = rid
+		}
+	} else if requestID := ctx.Value("request_id"); requestID != nil {
 		if rid, ok := requestID.(string); ok {
 			err.RequestID = rid
 		}
 	}
 
-	if userID := ctx.Value("user_id"); userID != nil {
+	if userID := ctx.Value(userIDKey); userID != nil {
+		if uid, ok := userID.(string); ok {
+			err.UserID = uid
+		}
+	} else if userID := ctx.Value("user_id"); userID != nil {
 		if uid, ok := userID.(string); ok {
 			err.UserID = uid
 		}

@@ -19,11 +19,17 @@ type BannerService struct {
 	enabled bool
 }
 
-var bannerService = &BannerService{
-	banners: make(map[string]string),
-	colors:  make(map[string]string),
-	enabled: true,
+// NewBannerService creates a new banner service instance
+func NewBannerService() *BannerService {
+	return &BannerService{
+		banners: make(map[string]string),
+		colors:  make(map[string]string),
+		enabled: true,
+	}
 }
+
+// bannerService is the default global banner service instance
+var bannerService = NewBannerService()
 
 // BannerOption configures the banner service
 type BannerOption func(*BannerService)
