@@ -1,3 +1,27 @@
+// Package http provides HTTP client utilities with resilience patterns.
+//
+// This package includes circuit breaker and retry logic for making resilient
+// HTTP calls that handle failures gracefully.
+//
+// # Circuit Breaker
+//
+// Prevents cascading failures by stopping requests to a failing service.
+// States: Closed (normal) -> Open (failing) -> HalfOpen (testing recovery)
+//
+// Quick example:
+//
+//	cb := http.NewCircuitBreaker(nil)
+//	err := cb.Execute(func() error {
+//	    return callExternalService()
+//	})
+//	if err != nil {
+//	    // service is unavailable
+//	}
+//
+// # Retry
+//
+// Exponential backoff with jitter for transient failures.
+// Use RetryableError to mark errors that should be retried.
 package http
 
 import (

@@ -1,15 +1,27 @@
-// Package cache provides caching utilities for all services.
+// Package cache provides Redis-backed caching utilities.
 //
-// This package implements a Redis-based caching layer with support for
-// cache invalidation, metrics, and automatic serialization.
+// This package implements a caching layer with automatic serialization,
+// hit/miss metrics, and common caching patterns like cache-aside.
 //
-// Example:
+// Quick example:
 //
-//	cache := cache.New(redisClient, 5*time.Minute)
+//	cache, _ := cache.New(redisClient, 5*time.Minute)
 //	var user User
 //	err := cache.GetOrSet(ctx, "user:123", &user, time.Hour, func() (interface{}, error) {
-//	    return fetchUserFromDB("123")
+//	    return db.FindUser(ctx, "123")
 //	})
+//
+// # Patterns
+//
+// - Get/Set: basic key-value operations with JSON serialization
+// - GetOrSet: cache-aside pattern - fetch from source on miss
+// - MultiGet/MultiSet: batch operations for performance
+// - InvalidateByPrefix: clear all keys matching a prefix
+//
+// # Metrics
+//
+// The cache tracks hits, misses, sets, deletes, and errors automatically.
+// Metrics are thread-safe and can be reset via ResetMetrics().
 package cache
 
 import (

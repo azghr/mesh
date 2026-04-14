@@ -1,31 +1,29 @@
-// Package database provides shared database connection utilities for all services.
+// Package database provides PostgreSQL connection utilities.
 //
-// This package implements a connection pool pattern for database connections with proper
-// connection pooling, configuration, and lifecycle management using dependency injection.
+// This package wraps database/sql with connection pool management
+// and helper functions for queries and transactions.
 //
-// Example:
+// Quick example:
 //
-//	config := Config{
-//	    Host:            "localhost",
-//	    Port:            5432,
-//	    User:            "user",
-//	    Password:        "pass",
-//	    Name:            "dbname",
-//	    SSLMode:         "disable",
-//	    MaxOpenConns:    25,
-//	    MaxIdleConns:    5,
-//	    ConnMaxLifetime: time.Hour,
-//	    ConnMaxIdleTime: 30 * time.Minute,
+//	cfg := database.Config{
+//	    Host: "localhost", Port: 5432, User: "user", Password: "pass",
+//	    Name: "app", SSLMode: "disable",
 //	}
-//
-//	pool, err := database.NewPool(config)
+//	pool, err := database.NewPool(cfg)
 //	if err != nil {
-//	    log.Fatal(err)
+//	    return err
 //	}
 //	defer pool.Close()
 //
-//	// Use pool.DB() with sqlc or other libraries
-//	queries := sqlc.New(pool.DB())
+//	// Use pool.DB() with sqlc, pgx, or any database library
+//	users := pool.DB().QueryContext(ctx, "SELECT * FROM users")
+//
+// # Features
+//
+// - Connection pool with configurable limits
+// - Transaction helper functions
+// - Query helpers for common patterns
+// - ScanRow/ScanRows for generic result mapping
 package database
 
 import (

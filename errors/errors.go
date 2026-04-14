@@ -1,3 +1,26 @@
+// Package errors provides structured error handling for the application.
+//
+// This package defines AppError, a rich error type that carries metadata like error
+// type, code, message, and context. It maps to HTTP status codes and gRPC statuses
+// for API responses.
+//
+// Quick example:
+//
+//	if user == nil {
+//	    return errors.NotFoundError("user", id)
+//	}
+//	return nil
+//
+// # Error Types
+//
+// The package defines standard error types: Validation, NotFound, Conflict,
+// Unauthorized, Forbidden, Internal, Database, External, Timeout, RateLimit.
+// Each maps to a specific HTTP status code for responses.
+//
+// # Context
+//
+// FromContext extracts request_id and user_id from context for error tracking.
+// It supports both typed context keys and legacy string keys for compatibility.
 package errors
 
 import (

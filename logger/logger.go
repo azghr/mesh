@@ -1,3 +1,20 @@
+// Package logger provides structured logging for services.
+//
+// This package wraps Go's standard slog for service-specific logging
+// with pretty terminal output and JSON support.
+//
+// Quick example:
+//
+//	log := logger.New("auth", "debug", false)
+//	log.Info("user logged in", "user_id", userID)
+//
+// # Features
+//
+// - Pretty terminal output with colors
+// - JSON format for production/libraries
+// - Structured logging with fields
+// - Component and operation context
+// - Global logger for convenience functions
 package logger
 
 import (

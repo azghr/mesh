@@ -1,3 +1,24 @@
+// Package config provides configuration loading and management.
+//
+// This package handles loading configuration from YAML files,
+// environment variables, and .env files with sensible defaults.
+//
+// Quick example:
+//
+//	cfg, err := config.Load("config.yaml", config.WithDefaultConfig())
+//	if err != nil {
+//	    return err
+//	}
+//
+//	// Environment variables override YAML (DB_HOST, DB_PORT, etc.)
+//	// .env files can provide defaults via LoadEnv()
+//
+// # Features
+//
+// - YAML loading with env variable expansion
+// - Environment variable overrides
+// - .env file support
+// - Production validation
 package config
 
 import (
