@@ -178,3 +178,140 @@ func Close() error {
 type ConfigAdapter interface {
 	ToDatabaseConfig() Config
 }
+
+// TxFunc is a function that operates within a transaction
+type TxFunc func(tx *sql.Tx) error
+
+// WithTransaction executes a function within a transaction.
+// If the function returns an error, the transaction is rolled back.
+// If successful, the transaction is committed.
+func WithTransaction(ctx context.Context, db *sql.DB, fn TxFunc) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+
+	if err := fn(tx); err != nil {
+		if rbErr := tx.Rollback(); rbErr != nil {
+			return fmt.Errorf("rollback failed: %v (original error: %w)", rbErr, err)
+		}
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
+}
+
+// WithTransactionOpts executes a function within a transaction with options.
+func WithTransactionOpts(ctx context.Context, db *sql.DB, opts *sql.TxOptions, fn TxFunc) error {
+	tx, err := db.BeginTx(ctx, opts)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+
+	if err := fn(tx); err != nil {
+		if rbErr := tx.Rollback(); rbErr != nil {
+			return fmt.Errorf("rollback failed: %v (original error: %w)", rbErr, err)
+		}
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
+}
+
+// QueryRow executes a query that returns a single row.
+func QueryRow(ctx context.Context, db *sql.DB, query string, args ...any) *sql.Row {
+	return db.QueryRowContext(ctx, query, args...)
+}
+
+// Query executes a query that returns multiple rows.
+func Query(ctx context.Context, db *sql.DB, query string, args ...any) (*sql.Rows, error) {
+	return db.QueryContext(ctx, query, args...)
+}
+
+// Exec executes a query that doesn't return rows.
+func Exec(ctx context.Context, db *sql.DB, query string, args ...any) (sql.Result, error) {
+	return db.ExecContext(ctx, query, args...)
+}
+
+// TxQueryRow executes a query within a transaction.
+func TxQueryRow(ctx context.Context, tx *sql.Tx, query string, args ...any) *sql.Row {
+	return tx.QueryRowContext(ctx, query, args...)
+}
+
+// TxQuery executes a query within a transaction.
+func TxQuery(ctx context.Context, tx *sql.Tx, query string, args ...any) (*sql.Rows, error) {
+	return tx.QueryContext(ctx, query, args...)
+}
+
+// TxExec executes a query within a transaction.
+func TxExec(ctx context.Context, tx *sql.Tx, query string, args ...any) (sql.Result, error) {
+	return tx.ExecContext(ctx, query, args...)
+}
+
+// QueryResult is a helper for queries that return data
+type QueryResult struct {
+	Rows *sql.Rows
+	Err  error
+}
+
+// TxQueryWithResult executes a query and returns the result
+func TxQueryWithResult(ctx context.Context, tx *sql.Tx, query string, args ...any) *QueryResult {
+	rows, err := tx.QueryContext(ctx, query, args...)
+	return &QueryResult{Rows: rows, Err: err}
+}
+
+// ScanRow scans a single row into the destination variables.
+func ScanRow[T any](row *sql.Row, dest *T) error {
+	return row.Scan(dest)
+}
+
+// ScanRows scans multiple rows into a slice.
+func ScanRows[T any](rows *sql.Rows, mapper func(*sql.Rows) (T, error)) ([]T, error) {
+	defer rows.Close()
+
+	var results []T
+	for rows.Next() {
+		item, err := mapper(rows)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, item)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return results, nil
+}
+
+// MustGet retrieves a value or panics if not found or error.
+func MustGet[T any](row *sql.Row, dest *T) T {
+	err := row.Scan(dest)
+	if err != nil {
+		panic(err)
+	}
+	return *dest
+}
+
+// OptionalGet retrieves a value or returns zero value if not found.
+func OptionalGet[T any](row *sql.Row, dest *T) (T, bool, error) {
+	err := row.Scan(dest)
+	if err == sql.ErrNoRows {
+		var zero T
+		return zero, false, nil
+	}
+	if err != nil {
+		var zero T
+		return zero, false, err
+	}
+	return *dest, true, nil
+}
