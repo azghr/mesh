@@ -36,6 +36,7 @@ import (
 type Config struct {
 	Server   ServerConfig   `yaml:"server" json:"server"`
 	Database DatabaseConfig `yaml:"database" json:"database"`
+	Redis    RedisConfig    `yaml:"redis" json:"redis"`
 	Log      LogConfig      `yaml:"log" json:"log"`
 }
 

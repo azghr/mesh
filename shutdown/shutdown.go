@@ -157,21 +157,15 @@ func (m *Manager) Shutdown(ctx context.Context) error {
 	// Sort tasks by dependency
 	ordered := m.resolveDependencies(tasks)
 
-	// Execute shutdown tasks
-	var wg sync.WaitGroup
+	// Execute shutdown tasks sequentially (in dependency order)
 	errCh := make(chan error, len(ordered))
 
 	for _, task := range ordered {
-		wg.Add(1)
-		go func(t *Task) {
-			defer wg.Done()
-			if err := m.executeTask(ctx, t); err != nil {
-				errCh <- fmt.Errorf("%s: %w", t.name, err)
-			}
-		}(task)
+		if err := m.executeTask(ctx, task); err != nil {
+			errCh <- fmt.Errorf("%s: %w", task.name, err)
+		}
 	}
 
-	wg.Wait()
 	close(errCh)
 
 	// Collect errors

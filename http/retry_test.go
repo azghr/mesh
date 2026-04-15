@@ -154,11 +154,11 @@ func TestRetry_NoJitter(t *testing.T) {
 
 func TestExponentialBackoff(t *testing.T) {
 	tests := []struct {
-		name       string
-		attempt    int
-		baseDelay  time.Duration
-		maxDelay   time.Duration
-		expected   time.Duration
+		name      string
+		attempt   int
+		baseDelay time.Duration
+		maxDelay  time.Duration
+		expected  time.Duration
 	}{
 		{
 			name:      "first attempt",

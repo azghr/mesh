@@ -1,26 +1,33 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
-  <title>mesh - Go microservice toolkit</title>
-  <meta name="description" content="A Go toolkit for building production-grade microservices">
+  <title>mesh - Go ervice toolkit</title>
+  <meta name="description" content="A Go toolkit for building production-grade services">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" href="favicon.ico" type="image/x-icon">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Exo+2:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Rajdhani:wght@500;600;700&display=swap"
+    rel="stylesheet">
   <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/docsify@4/lib/themes/dark.css">
   <style>
     :root {
-      --theme-color: #38bdf8; /* Softer, highly readable cyan-blue */
+      --theme-color: #38bdf8;
+      /* Softer, highly readable cyan-blue */
       --theme-color-dark: #0ea5e9;
       --theme-color-light: rgba(56, 189, 248, 0.15);
       --heading-color: #f8fafc;
-      --text-color: #e2e8f0; /* Brighter body text (gray-200) for better contrast */
+      --text-color: #e2e8f0;
+      /* Brighter body text (gray-200) for better contrast */
       --text-muted: #94a3b8;
-      --bg-color: #0f111a; /* Slightly lighter deep blue-black for better eye comfort */
+      --bg-color: #0f111a;
+      /* Slightly lighter deep blue-black for better eye comfort */
       --sidebar-width: 280px;
-      --code-bg: #1e2430; /* Lighter than pitch black to reduce high contrast strain */
+      --code-bg: #1e2430;
+      /* Lighter than pitch black to reduce high contrast strain */
       --code-fg: #e2e8f0;
       --border-color: rgba(56, 189, 248, 0.2);
       --success-color: #34d399;
@@ -31,18 +38,22 @@
       --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -1px rgba(0, 0, 0, 0.3);
     }
 
-    * { box-sizing: border-box; }
+    * {
+      box-sizing: border-box;
+    }
 
     body {
       font-family: 'Exo 2', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: var(--bg-color);
-      background-image: 
+      background-image:
         linear-gradient(rgba(56, 189, 248, 0.02) 1px, transparent 1px),
         linear-gradient(90deg, rgba(56, 189, 248, 0.02) 1px, transparent 1px);
-      background-size: 40px 40px; /* Reduced grid noise */
+      background-size: 40px 40px;
+      /* Reduced grid noise */
       color: var(--text-color);
       line-height: 1.7;
-      font-weight: 400; /* Increased from 300 for readability */
+      font-weight: 400;
+      /* Increased from 300 for readability */
     }
 
     /* Sidebar Styling */
@@ -55,7 +66,7 @@
       box-shadow: 2px 0 15px rgba(0, 0, 0, 0.5);
     }
 
-    .sidebar > h1 {
+    .sidebar>h1 {
       padding: 30px 25px 20px !important;
       margin: 0 !important;
       font-family: 'Rajdhani', sans-serif !important;
@@ -67,7 +78,7 @@
       text-transform: uppercase;
     }
 
-    .sidebar > h1 a {
+    .sidebar>h1 a {
       color: var(--theme-color) !important;
       text-decoration: none !important;
     }
@@ -76,8 +87,9 @@
       padding: 10px 0 30px !important;
     }
 
-    .sidebar-nav > ul > li > a {
-      color: #cbd5e0 !important; /* Brighter sidebar top-level links */
+    .sidebar-nav>ul>li>a {
+      color: #cbd5e0 !important;
+      /* Brighter sidebar top-level links */
       font-weight: 600 !important;
       font-size: 15px !important;
       text-transform: uppercase !important;
@@ -87,8 +99,8 @@
       border-left: 3px solid transparent;
     }
 
-    .sidebar-nav > ul > li > a:hover,
-    .sidebar-nav > ul > li.active > a {
+    .sidebar-nav>ul>li>a:hover,
+    .sidebar-nav>ul>li.active>a {
       background: linear-gradient(90deg, var(--theme-color-light) 0%, transparent 100%) !important;
       color: var(--theme-color) !important;
       text-shadow: 0 0 5px var(--theme-color);
@@ -105,7 +117,7 @@
 
     .sidebar-nav ul ul a:hover {
       color: #e2e8f0 !important;
-      text-shadow: 0 0 8px rgba(255,255,255,0.3);
+      text-shadow: 0 0 8px rgba(255, 255, 255, 0.3);
     }
 
     /* Main Content */
@@ -115,7 +127,10 @@
       color: var(--text-color) !important;
     }
 
-    .markdown-section h1, .markdown-section h2, .markdown-section h3, .markdown-section h4 {
+    .markdown-section h1,
+    .markdown-section h2,
+    .markdown-section h3,
+    .markdown-section h4 {
       font-family: 'Rajdhani', sans-serif !important;
       text-transform: uppercase;
       color: var(--heading-color) !important;
@@ -131,7 +146,7 @@
       border-bottom: 2px solid var(--border-color) !important;
       position: relative;
     }
-    
+
     .markdown-section h1::after {
       content: '';
       position: absolute;
@@ -153,13 +168,16 @@
 
     .markdown-section h3 {
       font-size: 24px !important;
-      color: #f1f5f9 !important; /* Extremely readable subheading */
+      color: #f1f5f9 !important;
+      /* Extremely readable subheading */
       margin-top: 40px !important;
     }
 
-    .markdown-section p, .markdown-section li {
+    .markdown-section p,
+    .markdown-section li {
       font-size: 16px !important;
-      color: var(--text-color) !important; /* Force readable text color */
+      color: var(--text-color) !important;
+      /* Force readable text color */
       line-height: 1.8 !important;
       font-weight: 400 !important;
     }
@@ -193,15 +211,18 @@
     .markdown-section pre code {
       font-family: 'JetBrains Mono', 'Fira Code', monospace !important;
       font-size: 14px !important;
-      color: #e2e8f0 !important; /* Brighter, high-contrast code text */
+      color: #e2e8f0 !important;
+      /* Brighter, high-contrast code text */
       line-height: 1.6 !important;
     }
 
     .markdown-section code {
       font-family: 'JetBrains Mono', monospace !important;
       font-size: 14px !important;
-      background: rgba(56, 189, 248, 0.15) !important; /* Softer tag background */
-      color: #38bdf8 !important; /* Extremely readable inline code color */
+      background: rgba(56, 189, 248, 0.15) !important;
+      /* Softer tag background */
+      color: #38bdf8 !important;
+      /* Extremely readable inline code color */
       padding: 3px 8px !important;
       border-radius: 3px !important;
       border: 1px solid rgba(56, 189, 248, 0.3);
@@ -214,7 +235,7 @@
       margin: 30px 0 !important;
       background: rgba(15, 17, 26, 0.8) !important;
       border: 1px solid var(--border-color);
-      box-shadow: 0 0 10px rgba(0,0,0,0.3);
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
     }
 
     .markdown-section tr {
@@ -227,7 +248,8 @@
 
     .markdown-section th {
       background: rgba(56, 189, 248, 0.1) !important;
-      color: #f8fafc !important; /* Ultra-bright header text */
+      color: #f8fafc !important;
+      /* Ultra-bright header text */
       font-family: 'Rajdhani', sans-serif !important;
       font-weight: 700 !important;
       padding: 15px 20px !important;
@@ -240,9 +262,10 @@
 
     .markdown-section td {
       padding: 14px 20px !important;
-      border-bottom: 1px solid rgba(255,255,255,0.05) !important;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
       font-size: 15px !important;
-      color: #e2e8f0 !important; /* Bright, highly readable cell text */
+      color: #e2e8f0 !important;
+      /* Bright, highly readable cell text */
     }
 
     .markdown-section tr:hover td {
@@ -256,19 +279,21 @@
       margin: 25px 0 !important;
       padding: 15px 25px !important;
       border-radius: 0 !important;
-      box-shadow: inset 0 0 10px rgba(0,0,0,0.1) !important;
+      box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.1) !important;
     }
 
     .markdown-section blockquote p {
       margin: 0 !important;
-      color: #f1f5f9 !important; /* Extremely high contrast for callouts */
+      color: #f1f5f9 !important;
+      /* Extremely high contrast for callouts */
       font-style: italic;
       font-weight: 500 !important;
     }
 
     /* Links */
     .markdown-section a {
-      color: #38bdf8 !important; /* More readable link color */
+      color: #38bdf8 !important;
+      /* More readable link color */
       text-decoration: none !important;
       position: relative;
       transition: all 0.2s ease !important;
@@ -276,7 +301,8 @@
 
     .markdown-section a:hover {
       text-shadow: var(--glow);
-      color: #7dd3fc !important; /* Lighter hover color */
+      color: #7dd3fc !important;
+      /* Lighter hover color */
     }
 
     /* Search Box */
@@ -290,7 +316,8 @@
       background: rgba(30, 36, 48, 0.8) !important;
       border: 1px solid rgba(56, 189, 248, 0.3) !important;
       border-radius: 4px !important;
-      color: #f8fafc !important; /* Bright search input text */
+      color: #f8fafc !important;
+      /* Bright search input text */
       padding: 12px 15px !important;
       width: 100% !important;
       font-family: 'Exo 2', sans-serif;
@@ -347,7 +374,7 @@
 
     ::-webkit-scrollbar-track {
       background: var(--bg-color);
-      border-left: 1px solid rgba(255,255,255,0.05);
+      border-left: 1px solid rgba(255, 255, 255, 0.05);
     }
 
     ::-webkit-scrollbar-thumb {
@@ -372,6 +399,7 @@
     }
   </style>
 </head>
+
 <body>
   <div id="app">Loading...</div>
   <script>
@@ -410,4 +438,5 @@
   <script src="//cdn.jsdelivr.net/npm/docsify@4/lib/plugins/pagination.min.js"></script>
   <script src="//cdn.jsdelivr.net/npm/docsify-copy-code@2/dist/docsify-copy-code.min.js"></script>
 </body>
+
 </html>

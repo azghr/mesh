@@ -8,14 +8,18 @@ import (
 )
 
 // RedisCheck creates a health check function for Redis
-func RedisCheck(client interface{ Ping(ctx context.Context) error }) Check {
+func RedisCheck(client interface {
+	Ping(ctx context.Context) error
+}) Check {
 	return func(ctx context.Context) error {
 		return client.Ping(ctx)
 	}
 }
 
 // DatabaseCheck creates a health check function for database connections
-func DatabaseCheck(pingable interface{ Ping(ctx context.Context) error }) Check {
+func DatabaseCheck(pingable interface {
+	Ping(ctx context.Context) error
+}) Check {
 	return func(ctx context.Context) error {
 		return pingable.Ping(ctx)
 	}

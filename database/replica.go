@@ -37,22 +37,22 @@ import (
 
 // ReplicaStatus represents the health status of a replica
 type ReplicaStatus struct {
-	Name       string
-	Healthy    bool
-	Lag        time.Duration // Replication lag
-	LastCheck  time.Time
-	ErrorCount int64
+	Name        string
+	Healthy     bool
+	Lag         time.Duration // Replication lag
+	LastCheck   time.Time
+	ErrorCount  int64
 	TotalChecks int64
 }
 
 // ReplicaManager manages read replicas with automatic failover
 type ReplicaManager struct {
-	primary      *Pool
-	replicas     map[string]*ManagedReplica
-	mu           sync.RWMutex
+	primary       *Pool
+	replicas      map[string]*ManagedReplica
+	mu            sync.RWMutex
 	checkInterval time.Duration
-	healthyCount int64
-	totalCount   int64
+	healthyCount  int64
+	totalCount    int64
 }
 
 // ManagedReplica wraps a Pool with health monitoring
@@ -100,9 +100,9 @@ func (rm *ReplicaManager) AddReplica(name string, pool *Pool) error {
 	replica := &ManagedReplica{
 		Pool: pool,
 		status: ReplicaStatus{
-			Name:       name,
-			Healthy:    true,
-			LastCheck:  time.Now(),
+			Name:        name,
+			Healthy:     true,
+			LastCheck:   time.Now(),
 			TotalChecks: 0,
 		},
 	}
@@ -396,11 +396,11 @@ func (rm *ReplicaManager) GetStats() map[string]interface{} {
 	defer rm.mu.RUnlock()
 
 	stats := map[string]interface{}{
-		"total_replicas":      len(rm.replicas),
-		"healthy_replicas":    rm.HealthyReplicaCount(),
-		"health_ratio":        rm.HealthRatio(),
-		"total_requests":      atomic.LoadInt64(&rm.totalCount),
-		"healthy_requests":    atomic.LoadInt64(&rm.healthyCount),
+		"total_replicas":   len(rm.replicas),
+		"healthy_replicas": rm.HealthyReplicaCount(),
+		"health_ratio":     rm.HealthRatio(),
+		"total_requests":   atomic.LoadInt64(&rm.totalCount),
+		"healthy_requests": atomic.LoadInt64(&rm.healthyCount),
 	}
 
 	if rm.primary != nil {

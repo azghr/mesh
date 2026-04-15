@@ -62,6 +62,7 @@ type RedisClient interface {
 	Expire(ctx context.Context, key string, expiration time.Duration) *redis.BoolCmd
 	TTL(ctx context.Context, key string) *redis.DurationCmd
 	Keys(ctx context.Context, pattern string) *redis.StringSliceCmd
+	Scan(ctx context.Context, cursor uint64, match string, count int64) *redis.ScanCmd
 	Pipeline() redis.Pipeliner
 }
 
@@ -314,20 +315,37 @@ func (c *Cache) GetOrSetString(ctx context.Context, key string, ttl time.Duratio
 }
 
 // InvalidateByPrefix invalidates all keys with a given prefix
+// Uses SCAN for production safety instead of KEYS which blocks
 func (c *Cache) InvalidateByPrefix(ctx context.Context, prefix string) error {
 	fullPrefix := c.keyPrefix + prefix
 
-	keys, err := c.client.Keys(ctx, fullPrefix+"*").Result()
-	if err != nil {
-		c.incErrors()
-		return fmt.Errorf("failed to find keys by prefix: %w", err)
+	var cursor uint64
+	var totalDeleted int64
+
+	for {
+		var keys []string
+		var err error
+
+		keys, cursor, err = c.client.Scan(ctx, cursor, fullPrefix+"*", 100).Result()
+		if err != nil {
+			c.incErrors()
+			return fmt.Errorf("failed to scan keys: %w", err)
+		}
+
+		if len(keys) > 0 {
+			if delErr := c.client.Del(ctx, keys...).Err(); delErr != nil {
+				c.incErrors()
+				return fmt.Errorf("failed to delete keys: %w", delErr)
+			}
+			totalDeleted += int64(len(keys))
+		}
+
+		if cursor == 0 {
+			break
+		}
 	}
 
-	if len(keys) > 0 {
-		if err := c.client.Del(ctx, keys...).Err(); err != nil {
-			c.incErrors()
-			return fmt.Errorf("failed to delete keys by prefix: %w", err)
-		}
+	if totalDeleted > 0 {
 		c.incDeletes()
 	}
 

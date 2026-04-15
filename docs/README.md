@@ -7,7 +7,7 @@
 [![pkg.go.dev](https://pkg.go.dev/badge/github.com/azghr/mesh.svg)](https://pkg.go.dev/github.com/azghr/mesh)
 [![Go Report](https://goreportcard.com/badge/github.com/azghr/mesh)](https://goreportcard.com/report/github.com/azghr/mesh)
 
-**A production-grade Go toolkit for building microservices**
+**A production-grade Go toolkit for building services**
 
 </div>
 
@@ -16,7 +16,7 @@
 ## Why mesh?
 
 - ⚡ **Lightweight** - Import only what you need
-- 🛡️ **Production-tested** - Built from real-world microservices  
+- 🛡️ **Production-tested** - Built from real-world services  
 - 🔧 **Composable** - Each package works independently
 - 📚 **Well-documented** - Godoc + static docs + examples
 

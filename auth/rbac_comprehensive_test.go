@@ -331,9 +331,9 @@ func TestRBAC_RoleHierarchy(t *testing.T) {
 	rbac := NewRBAC(nil)
 
 	tests := []struct {
-		role               Role
-		expectedPerms      int
-		deniedPerms        []Permission
+		role          Role
+		expectedPerms int
+		deniedPerms   []Permission
 	}{
 		{
 			role:          RoleAdmin,
@@ -382,7 +382,7 @@ func TestRBAC_UserContext(t *testing.T) {
 	mockStore := &mockRoleStore{
 		roles: map[string]Role{
 			"user-admin": RoleAdmin,
-			"user-user":   RoleUser,
+			"user-user":  RoleUser,
 		},
 	}
 

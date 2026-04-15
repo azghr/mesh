@@ -9,10 +9,10 @@ import (
 
 // HTTPHandler provides HTTP handlers for health checks
 type HTTPHandler struct {
-	checker  *Checker
-	service  string
-	version  string
-	env      string
+	checker *Checker
+	service string
+	version string
+	env     string
 }
 
 // NewHTTPHandler creates a new HTTP handler for health checks

@@ -353,9 +353,9 @@ func TestValidateProduction(t *testing.T) {
 
 func TestIsProduction(t *testing.T) {
 	tests := []struct {
-		name     string
+		name        string
 		environment string
-		expected bool
+		expected    bool
 	}{
 		{"Production", "production", true},
 		{"Development", "development", false},
@@ -375,9 +375,9 @@ func TestIsProduction(t *testing.T) {
 
 func TestIsDevelopment(t *testing.T) {
 	tests := []struct {
-		name     string
+		name        string
 		environment string
-		expected bool
+		expected    bool
 	}{
 		{"Development", "development", true},
 		{"Production", "production", false},
@@ -396,9 +396,9 @@ func TestIsDevelopment(t *testing.T) {
 
 func TestIsStaging(t *testing.T) {
 	tests := []struct {
-		name     string
+		name        string
 		environment string
-		expected bool
+		expected    bool
 	}{
 		{"Staging", "staging", true},
 		{"Development", "development", false},

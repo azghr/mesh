@@ -52,6 +52,10 @@ func (m *mockRedisClient) TTL(ctx context.Context, key string) *redis.DurationCm
 	return m.client.TTL(ctx, key)
 }
 
+func (m *mockRedisClient) Scan(ctx context.Context, cursor uint64, match string, count int64) *redis.ScanCmd {
+	return m.client.Scan(ctx, cursor, match, count)
+}
+
 func (m *mockRedisClient) Pipeline() redis.Pipeliner {
 	return m.client.Pipeline()
 }
@@ -110,8 +114,8 @@ func TestCacheMetrics(t *testing.T) {
 	// Perform operations
 	_ = cache.Set(ctx, "key1", testData{Value: "1"}, time.Minute)
 	var result testData
-	_ = cache.Get(ctx, "key1", &result)     // hit
-	_ = cache.Get(ctx, "missing", &result)  // miss
+	_ = cache.Get(ctx, "key1", &result)    // hit
+	_ = cache.Get(ctx, "missing", &result) // miss
 
 	metrics := cache.Metrics()
 	assert.Equal(t, int64(1), metrics.Hits)

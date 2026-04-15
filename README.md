@@ -1,10 +1,10 @@
 # mesh
 
-A Go toolkit for building production-grade microservices. Provides the common infrastructure code you need so you can focus on business logic.
+A Go toolkit for building production-grade services. Provides the common infrastructure code you need so you can focus on business logic.
 
 ## What This Is
 
-Think of mesh as the foundation beneath your service. It handles the undifferentiated heavy lifting—the stuff every service needs but nobody enjoys writing:
+Think of mesh as the foundation beneath your application. It handles the undifferentiated heavy lifting—the stuff every service needs but nobody enjoys writing:
 
 - **Database connections** with pooling, transactions, and query helpers
 - **Error handling** that maps to HTTP/gRPC status codes automatically  
@@ -15,7 +15,7 @@ Think of mesh as the foundation beneath your service. It handles the undifferent
 
 ## Why Use It
 
-You're building a microservice. You need a database, caching, some HTTP clients, and observability. You could:
+You're building a service. You need a database, caching, some HTTP clients, and observability. You could:
 
 1. Write all this yourself (time-consuming, easy to get wrong)
 2. Use a full framework (adds a lot of baggage you might not need)

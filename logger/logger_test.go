@@ -144,9 +144,9 @@ func TestLoggerWithContext(t *testing.T) {
 func TestLoggerWithFields(t *testing.T) {
 	l := Default()
 	fields := map[string]any{
-		"user_id":  "123",
-		"action":   "test",
-		"success":  true,
+		"user_id": "123",
+		"action":  "test",
+		"success": true,
 	}
 
 	fieldsLogger := l.WithFields(fields)

@@ -12,10 +12,10 @@ func TestRBAC_HasPermission(t *testing.T) {
 	rbac := NewRBAC(nil)
 
 	tests := []struct {
-		name      string
-		role      Role
+		name       string
+		role       Role
 		permission Permission
-		expected  bool
+		expected   bool
 	}{
 		{"Admin can delete wallet", RoleAdmin, PermWalletDelete, true},
 		{"User can read wallet", RoleUser, PermWalletRead, true},
@@ -38,10 +38,10 @@ func TestRBAC_HasAnyPermission(t *testing.T) {
 	rbac := NewRBAC(nil)
 
 	tests := []struct {
-		name       string
-		role       Role
+		name        string
+		role        Role
 		permissions []Permission
-		expected   bool
+		expected    bool
 	}{
 		{
 			"User has read or write",
@@ -75,10 +75,10 @@ func TestRBAC_HasAllPermissions(t *testing.T) {
 	rbac := NewRBAC(nil)
 
 	tests := []struct {
-		name       string
-		role       Role
+		name        string
+		role        Role
 		permissions []Permission
-		expected   bool
+		expected    bool
 	}{
 		{
 			"User has both read and write wallet",
