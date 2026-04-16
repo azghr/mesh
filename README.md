@@ -9,7 +9,7 @@ Think of mesh as the foundation beneath your application. It handles the undiffe
 - **Database connections** with pooling, transactions, and query helpers
 - **Error handling** that maps to HTTP/gRPC status codes automatically  
 - **Resilient HTTP clients** with circuit breakers and retry logic
-- **Redis caching** with built-in metrics and cache-aside pattern
+- **Redis caching** with built-in metrics, cache-aside pattern, and stampede protection
 - **Structured logging** for development (pretty terminal) and production (JSON)
 - **Configuration** from YAML files with environment variable overrides
 
@@ -101,7 +101,7 @@ func main() {
 |---------|---------|---------------------|
 | `config` | Load and validate configuration | `Load()`, `GetEnv()`, `ValidateProduction()` |
 | `database` | PostgreSQL connection pool | `NewPool()`, `WithTransaction()`, `ScanRows()` |
-| `cache` | Redis caching with metrics | `GetOrSet()`, `InvalidateByPrefix()`, `HitRate()` |
+| `cache` | Redis caching with metrics + dedup | `GetOrSet()`, `DedupStore`, `HitRate()` |
 | `errors` | Structured errors → HTTP/gRPC | `NotFoundError()`, `ToHTTPStatus()`, `ToGRPCStatus()` |
 | `logger` | Structured logging | `New()`, `With()`, `FormatServiceName()` |
 | `http` | Resilient HTTP patterns | `ResilientClient`, `CircuitBreaker`, `Retry()` |
