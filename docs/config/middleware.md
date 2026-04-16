@@ -39,25 +39,141 @@ app.Use(middleware.Recovery())
 
 ## Rate Limiting
 
-Request rate limiting per IP or per user.
+Request rate limiting with distributed support via Redis (Fiber integration).
+
+### Basic Usage
 
 ```go
-// Basic (100 requests per minute per IP)
-app.Use(middleware.RateLimit())
+import (
+    "github.com/azghr/mesh/ratelimiter"
+    "github.com/azghr/mesh/middleware"
+)
 
-// Custom
-app.Use(middleware.RateLimit(
-    middleware.WithLimit(200),
-    middleware.WithWindow(time.Minute),
-    middleware.WithKeyFunc(func(c *fiber.Ctx) string {
-        return c.IP()  // or c.Locals("user_id") for per-user
-    }),
-))
+// Redis-backed distributed rate limiter
+redisClient, _ := redis.NewClient(redis.Config{Host: "localhost", Port: 6379})
+limiter := ratelimiter.NewRedisRateLimiter(redisClient.Client(), 100, time.Minute)
+
+mw := middleware.NewLimit(limiter)
+app.Use(mw.Handler())
 ```
 
-Response when rate limited:
+### Custom Key Functions
+
+```go
+// Per-user rate limiting
+mw := middleware.NewLimit(limiter)
+mw.KeyFunc(middleware.UserKeyFunc)
+
+// Per-endpoint rate limiting
+mw.KeyFunc(middleware.EndpointKeyFunc)
+
+// Custom logic
+mw.KeyFunc(func(c *fiber.Ctx) string {
+    return "tenant:" + c.Locals("tenant_id").(string)
+})
+```
+
+### Metrics
+
+```go
+mw := middleware.NewLimit(limiter)
+app.Use(mw.Handler())
+
+// Access metrics
+metrics := mw.Metrics()
+fmt.Printf("Allowed: %d, Rejected: %d\n", 
+    metrics.AllowedTotal(), metrics.RejectedTotal())
+```
+
+### Custom Key Functions
+
+```go
+// Per-user rate limiting
+mw := middleware.NewLimit(limiter)
+mw.KeyFunc(middleware.UserKeyFunc)
+
+// Per-endpoint rate limiting
+mw.KeyFunc(middleware.EndpointKeyFunc)
+
+// Custom logic
+mw.KeyFunc(func(c *fiber.Ctx) string {
+    return "tenant:" + c.Locals("tenant_id").(string)
+})
+```
+
+### In-Memory (Single Instance)
+
+```go
+import "github.com/azghr/mesh/middleware"
+
+// 100 requests per minute per IP
+limiter := ratelimiter.NewSimpleRateLimiter(100, time.Minute)
+mw := middleware.NewLimit(limiter)
+app.Use(mw.Handler())
+```
+
+### Distributed (Redis-Backed)
+
+```go
+import (
+    "github.com/azghr/mesh/ratelimiter"
+    "github.com/azghr/mesh/middleware"
+    "github.com/azghr/mesh/redis"
+)
+
+// Redis-backed for multi-instance deployments
+redisClient, _ := redis.NewClient(redis.Config{Host: "localhost", Port: 6379})
+limiter := ratelimiter.NewRedisRateLimiter(redisClient.Client(), 100, time.Minute)
+mw := middleware.NewLimit(limiter)
+app.Use(mw.Handler())
+```
+
+### Custom Key Functions
+
+```go
+// Per-user rate limiting (requires JWT/auth middleware to set user_id)
+mw := middleware.NewLimit(limiter)
+mw.KeyFunc(middleware.UserKeyFunc)
+
+// Per-endpoint rate limiting
+mw.KeyFunc(middleware.EndpointKeyFunc)
+
+// Custom logic
+mw.KeyFunc(func(c *fiber.Ctx) string {
+    return "tenant:" + c.Locals("tenant_id").(string)
+})
+```
+
+### Metrics
+
+```go
+mw := middleware.NewLimit(limiter)
+app.Use(mw.Handler())
+
+// Access metrics
+metrics := mw.Metrics()
+fmt.Printf("Allowed: %d, Rejected: %d\n", 
+    metrics.AllowedTotal(), metrics.RejectedTotal())
+```
+
+### Response Headers
+
+All responses include rate limit information:
+
+| Header | Description |
+|--------|-------------|
+| `X-RateLimit-Limit` | Maximum requests allowed |
+| `X-RateLimit-Remaining` | Requests remaining in window |
+| `X-RateLimit-Reset` | Unix timestamp when window resets |
+| `Retry-After` | Seconds to wait (only when limited) |
+
+### Rate Limited Response
+
 ```json
-{"error": "rate limit exceeded", "retry_after": 30}
+{
+  "error": "rate limit exceeded",
+  "code": "RATE_LIMITED"
+}
 ```
 
 ## Correlation ID
@@ -93,7 +209,7 @@ app.Post("/users", middleware.Validate(userSchema), handler)
 |------------|---------|
 | `Logging` | Request/response logging |
 | `Recovery` | Panic recovery |
-| `RateLimit` | Request rate limiting |
+| `Limit` | Request rate limiting (Redis-backed) |
 | `Correlation` | Request ID tracking |
 | `SecurityHeaders` | Add security headers |
 | `Validation` | Request body validation |

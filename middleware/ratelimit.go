@@ -1,211 +1,231 @@
+// Package middleware provides HTTP middleware for Fiber applications.
 package middleware
 
 import (
-	"net"
-	"net/http"
+	"context"
 	"strconv"
-	"strings"
-	"sync"
+	"sync/atomic"
 	"time"
+
+	"github.com/azghr/mesh/ratelimiter"
+	"github.com/gofiber/fiber/v2"
 )
 
-// RateLimiter provides token-bucket rate limiting for HTTP requests.
-//
-// RateLimiter tracks requests per IP address and enforces configurable
-// request limits within sliding time windows. It automatically cleans up
-// old visitor entries to prevent memory leaks.
-//
-// The rate limiter adds the following headers to responses:
-//   - X-RateLimit-Limit: Maximum requests allowed
-//   - X-RateLimit-Remaining: Requests remaining in current window
-//   - X-RateLimit-Reset: When the window will reset
-//   - Retry-After: Suggested retry duration (when limited)
+// LimitConfig configures the rate limit middleware.
+type LimitConfig struct {
+	// Limiter is the rate limiter to use (Redis or in-memory).
+	Limiter ratelimiter.RateLimiter
+	// KeyFunc determines the key for rate limiting (IP, user, endpoint, etc.).
+	KeyFunc func(*fiber.Ctx) string
+	// SkipFailed allows requests that return errors to bypass rate limiting.
+	SkipFailed bool
+}
+
+// LimitMetrics tracks rate limiting statistics.
+type LimitMetrics struct {
+	Allowed  int64
+	Rejected int64
+}
+
+// NewLimitMetrics creates a new metrics counter.
+func NewLimitMetrics() *LimitMetrics {
+	return &LimitMetrics{}
+}
+
+// AllowedTotal returns the total number of allowed requests.
+func (m *LimitMetrics) AllowedTotal() int64 {
+	return atomic.LoadInt64(&m.Allowed)
+}
+
+// RejectedTotal returns the total number of rejected requests.
+func (m *LimitMetrics) RejectedTotal() int64 {
+	return atomic.LoadInt64(&m.Rejected)
+}
+
+// Reset clears all metrics.
+func (m *LimitMetrics) Reset() {
+	atomic.StoreInt64(&m.Allowed, 0)
+	atomic.StoreInt64(&m.Rejected, 0)
+}
+
+// LimitMiddleware provides rate limiting for Fiber applications.
+// It wraps a RateLimiter and applies it to incoming requests.
 //
 // Example:
 //
-//	// Allow 100 requests per minute
-//	rateLimiter := middleware.NewRateLimiter(100, time.Minute)
-//	http.Handle("/api", rateLimiter.Middleware(handler))
-type RateLimiter struct {
-	visitors map[string]*Visitor
-	mu       sync.RWMutex
-	rate     int           // requests allowed per window
-	window   time.Duration // time window for rate limiting
+//	limiter := ratelimiter.NewRedisRateLimiter(client, 100, time.Minute)
+//	mw := middleware.NewLimit(limiter)
+//	app.Use(mw.Handler())
+type LimitMiddleware struct {
+	config  LimitConfig
+	metrics *LimitMetrics
 }
 
-// Visitor tracks requests from a single client (identified by IP)
-type Visitor struct {
-	requests  []time.Time
-	lastReset time.Time
-}
-
-// NewRateLimiter creates a new rate limiter with the specified parameters.
+// NewLimit creates a new rate limit middleware.
 //
-// rate is the maximum number of requests allowed within the time window.
-// window is the duration of the time window (e.g., time.Minute).
-//
-// The rate limiter automatically starts a cleanup goroutine that removes
-// visitors inactive for more than 1 hour to prevent memory leaks.
-func NewRateLimiter(rate int, window time.Duration) *RateLimiter {
-	rl := &RateLimiter{
-		visitors: make(map[string]*Visitor),
-		rate:     rate,
-		window:   window,
+//	limiter := ratelimiter.NewRedisRateLimiter(redisClient, 100, time.Minute)
+//	mw := middleware.NewLimit(limiter)
+func NewLimit(limiter ratelimiter.RateLimiter) *LimitMiddleware {
+	return &LimitMiddleware{
+		config: LimitConfig{
+			Limiter: limiter,
+			KeyFunc: DefaultKeyFunc,
+		},
+		metrics: NewLimitMetrics(),
 	}
-	// Start cleanup goroutine
-	go rl.cleanup()
-	return rl
 }
 
-// extractIP securely extracts the client IP address from the request.
-// It validates the IP format and only trusts X-Forwarded-For from known proxies.
-func extractIP(r *http.Request) string {
-	// Get the direct connection IP
-	ip, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		ip = r.RemoteAddr
-	}
-
-	// Validate the IP is in a proper format
-	if net.ParseIP(ip) == nil {
-		return "" // Invalid IP
-	}
-
-	// Check if request is from a trusted proxy
-	// In production, you should maintain a list of trusted proxy IPs/CIDRs
-	// For now, we'll only trust X-Forwarded-For if the direct connection
-	// is from localhost or a known private network
-	if isTrustedProxy(ip) {
-		// Parse X-Forwarded-For header (can contain multiple IPs: "client, proxy1, proxy2")
-		xff := r.Header.Get("X-Forwarded-For")
-		if xff != "" {
-			// Get the first IP (original client)
-			parts := strings.Split(xff, ",")
-			if len(parts) > 0 {
-				clientIP := strings.TrimSpace(parts[0])
-				// Validate the client IP
-				if net.ParseIP(clientIP) != nil {
-					return clientIP
-				}
+// DefaultKeyFunc extracts the client IP as the rate limit key.
+// It respects X-Forwarded-For headers from trusted proxies.
+func DefaultKeyFunc(c *fiber.Ctx) string {
+	xff := c.Get("X-Forwarded-For")
+	if xff != "" {
+		for _, ip := range splitAndTrim(xff) {
+			if isValidIP(ip) {
+				return "ip:" + ip
 			}
 		}
 	}
-
-	// Return the direct connection IP
-	return ip
+	return "ip:" + c.IP()
 }
 
-// isTrustedProxy checks if the given IP is a trusted proxy.
-// In production, this should check against a list of known proxy IPs.
-func isTrustedProxy(ip string) bool {
-	parsedIP := net.ParseIP(ip)
-	if parsedIP == nil {
+// splitAndTrim splits a comma-separated string and trims whitespace.
+func splitAndTrim(s string) []string {
+	var result []string
+	for _, part := range split(s, ",") {
+		trimmed := trimSpace(part)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
+}
+
+// split splits a string by separator without using strings package.
+func split(s string, sep string) []string {
+	if s == "" {
+		return nil
+	}
+	var result []string
+	start := 0
+	for i := 0; i < len(s); i++ {
+		if i+len(sep) <= len(s) && s[i:i+len(sep)] == sep {
+			result = append(result, s[start:i])
+			start = i + len(sep)
+			i = start - 1
+		}
+	}
+	result = append(result, s[start:])
+	return result
+}
+
+// trimSpace removes leading and trailing whitespace.
+func trimSpace(s string) string {
+	start := 0
+	end := len(s)
+	for start < end && (s[start] == ' ' || s[start] == '\t') {
+		start++
+	}
+	for end > start && (s[end-1] == ' ' || s[end-1] == '\t') {
+		end--
+	}
+	return s[start:end]
+}
+
+// isValidIP checks if a string is a valid IPv4 address.
+func isValidIP(s string) bool {
+	if len(s) == 0 {
 		return false
 	}
-
-	// Trust localhost and private networks
-	// You should customize this based on your infrastructure
-	return parsedIP.IsLoopback() ||
-		parsedIP.IsPrivate() ||
-		parsedIP.IsLinkLocalUnicast()
+	dots := 0
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == '.' {
+			dots++
+			continue
+		}
+		if c >= '0' && c <= '9' {
+			continue
+		}
+		return false
+	}
+	return dots == 3
 }
 
-// Middleware returns an HTTP middleware that implements rate limiting
-func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Securely extract IP address
-		ip := extractIP(r)
-
-		// If we couldn't get a valid IP, reject the request
-		if ip == "" {
-			http.Error(w, "unable to determine client IP", http.StatusBadRequest)
-			return
-		}
-
-		rl.mu.RLock()
-		visitor, exists := rl.visitors[ip]
-		rl.mu.RUnlock()
-
-		now := time.Now()
-		if !exists {
-			visitor = &Visitor{lastReset: now}
-			rl.mu.Lock()
-			rl.visitors[ip] = visitor
-			rl.mu.Unlock()
-		}
-
-		// Reset window if expired
-		if now.Sub(visitor.lastReset) > rl.window {
-			visitor.requests = nil
-			visitor.lastReset = now
-		}
-
-		// Add current request
-		visitor.requests = append(visitor.requests, now)
-
-		// Check if limit exceeded
-		if len(visitor.requests) > rl.rate {
-			// Set rate limit headers
-			w.Header().Set("X-RateLimit-Limit", strconv.Itoa(rl.rate))
-			w.Header().Set("X-RateLimit-Remaining", "0")
-			w.Header().Set("X-RateLimit-Reset", visitor.lastReset.Add(rl.window).Format(time.RFC1123))
-			w.Header().Set("Retry-After", rl.window.String())
-
-			http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
-			return
-		}
-
-		// Set rate limit headers for successful request
-		remaining := rl.rate - len(visitor.requests)
-		w.Header().Set("X-RateLimit-Limit", strconv.Itoa(rl.rate))
-		w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(remaining))
-		w.Header().Set("X-RateLimit-Reset", visitor.lastReset.Add(rl.window).Format(time.RFC1123))
-
-		next.ServeHTTP(w, r)
-	})
+// UserKeyFunc uses the user ID from context as the rate limit key.
+// Falls back to IP if no user ID is set.
+func UserKeyFunc(c *fiber.Ctx) string {
+	userID := c.Locals("user_id")
+	if userID == nil {
+		return DefaultKeyFunc(c)
+	}
+	return "user:" + toString(userID)
 }
 
-// cleanup removes old visitor entries to prevent memory leaks
-func (rl *RateLimiter) cleanup() {
-	ticker := time.NewTicker(time.Minute)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		rl.mu.Lock()
-		cutoff := time.Now().Add(-time.Hour) // Remove visitors inactive for 1 hour
-		for ip, v := range rl.visitors {
-			if v.lastReset.Before(cutoff) {
-				delete(rl.visitors, ip)
-			}
-		}
-		rl.mu.Unlock()
+// toString converts an interface{} to string.
+func toString(v interface{}) string {
+	switch x := v.(type) {
+	case string:
+		return x
+	case int:
+		return strconv.Itoa(x)
+	case int64:
+		return strconv.FormatInt(x, 10)
+	default:
+		return ""
 	}
 }
 
-// GetVisitorCount returns the current number of tracked visitors
-func (rl *RateLimiter) GetVisitorCount() int {
-	rl.mu.RLock()
-	defer rl.mu.RUnlock()
-	return len(rl.visitors)
+// EndpointKeyFunc uses the HTTP method and path as the rate limit key.
+// Format: "endpoint:GET:/users"
+func EndpointKeyFunc(c *fiber.Ctx) string {
+	return "endpoint:" + c.Method() + ":" + c.Path()
 }
 
-// Reset clears all visitor data
-func (rl *RateLimiter) Reset() {
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
-	rl.visitors = make(map[string]*Visitor)
+// KeyFunc sets a custom key function for rate limiting.
+//
+// Example:
+//
+//	mw := middleware.NewLimit(limiter)
+//	mw.KeyFunc(func(c *fiber.Ctx) string {
+//	    return "tenant:" + c.Locals("tenant_id").(string)
+//	})
+func (m *LimitMiddleware) KeyFunc(f func(*fiber.Ctx) string) *LimitMiddleware {
+	m.config.KeyFunc = f
+	return m
 }
 
-// SetRate changes the rate limit
-func (rl *RateLimiter) SetRate(rate int) {
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
-	rl.rate = rate
+// Metrics returns the rate limiting metrics.
+func (m *LimitMiddleware) Metrics() *LimitMetrics {
+	return m.metrics
 }
 
-// SetWindow changes the rate limit window
-func (rl *RateLimiter) SetWindow(window time.Duration) {
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
-	rl.window = window
+// Handler returns the Fiber middleware handler.
+func (m *LimitMiddleware) Handler() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		key := m.config.KeyFunc(c)
+
+		allowed, err := m.config.Limiter.Allow(context.Background(), key)
+		if err != nil {
+			return c.Next()
+		}
+
+		current, remaining, _ := m.config.Limiter.GetLimit(context.Background(), key)
+
+		c.Set("X-RateLimit-Limit", strconv.Itoa(current))
+		c.Set("X-RateLimit-Remaining", strconv.Itoa(remaining))
+		c.Set("X-RateLimit-Reset", strconv.FormatInt(time.Now().Add(time.Minute).Unix(), 10))
+
+		if !allowed {
+			atomic.AddInt64(&m.metrics.Rejected, 1)
+			c.Set("Retry-After", "60")
+			return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
+				"error": "rate limit exceeded",
+				"code":  "RATE_LIMITED",
+			})
+		}
+
+		atomic.AddInt64(&m.metrics.Allowed, 1)
+		return c.Next()
+	}
 }

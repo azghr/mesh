@@ -1,315 +1,212 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/azghr/mesh/ratelimiter"
+	"github.com/gofiber/fiber/v2"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func TestRateLimiter_AllowsRequestsUnderLimit(t *testing.T) {
-	rl := NewRateLimiter(5, time.Minute)
+type mockLimiter struct {
+	allowed    bool
+	count      int
+	remaining  int
+	err        error
+	allowCalls int
+}
 
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+func (m *mockLimiter) Allow(ctx context.Context, key string) (bool, error) {
+	m.allowCalls++
+	return m.allowed, m.err
+}
+
+func (m *mockLimiter) AllowN(ctx context.Context, key string, n int) (bool, error) {
+	m.allowCalls++
+	return m.allowed, m.err
+}
+
+func (m *mockLimiter) Reset(ctx context.Context, key string) error {
+	return nil
+}
+
+func (m *mockLimiter) GetLimit(ctx context.Context, key string) (int, int, error) {
+	return m.count, m.remaining, nil
+}
+
+func TestLimitMiddleware_Allows(t *testing.T) {
+	app := fiber.New()
+
+	limiter := &mockLimiter{allowed: true, count: 100, remaining: 99}
+	mw := NewLimit(limiter)
+	mw.KeyFunc(func(c *fiber.Ctx) string {
+		return "test:key"
 	})
 
-	middleware := rl.Middleware(handler)
+	app.Use(mw.Handler())
+	app.Get("/test", func(c *fiber.Ctx) error {
+		return c.SendString("OK")
+	})
 
-	// Make 5 requests (should all succeed)
+	req, _ := http.NewRequest("GET", "/test", nil)
+	req.Header.Set("X-Forwarded-For", "192.168.1.1")
+
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	metrics := mw.Metrics()
+	assert.Equal(t, int64(1), metrics.AllowedTotal())
+	assert.Equal(t, int64(0), metrics.RejectedTotal())
+}
+
+func TestLimitMiddleware_Rejects(t *testing.T) {
+	app := fiber.New()
+
+	limiter := &mockLimiter{allowed: false, count: 100, remaining: 0}
+	mw := NewLimit(limiter)
+
+	app.Use(mw.Handler())
+	app.Get("/test", func(c *fiber.Ctx) error {
+		return c.SendString("OK")
+	})
+
+	req, _ := http.NewRequest("GET", "/test", nil)
+
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	assert.Equal(t, 429, resp.StatusCode)
+
+	metrics := mw.Metrics()
+	assert.Equal(t, int64(0), metrics.AllowedTotal())
+	assert.Equal(t, int64(1), metrics.RejectedTotal())
+}
+
+func TestLimitMiddleware_Headers(t *testing.T) {
+	app := fiber.New()
+
+	limiter := &mockLimiter{allowed: true, count: 100, remaining: 50}
+	mw := NewLimit(limiter)
+
+	app.Use(mw.Handler())
+	app.Get("/test", func(c *fiber.Ctx) error {
+		return c.SendString("OK")
+	})
+
+	req, _ := http.NewRequest("GET", "/test", nil)
+
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+	assert.NotEmpty(t, resp.Header.Get("X-RateLimit-Limit"))
+	assert.NotEmpty(t, resp.Header.Get("X-RateLimit-Remaining"))
+	assert.NotEmpty(t, resp.Header.Get("X-RateLimit-Reset"))
+}
+
+func TestLimitMiddleware_KeyFunctions(t *testing.T) {
+	app := fiber.New()
+
+	var capturedKey string
+	limiter := &mockLimiter{allowed: true}
+	mw := NewLimit(limiter)
+	mw.KeyFunc(func(c *fiber.Ctx) string {
+		key := "custom:" + c.Path()
+		capturedKey = key
+		return key
+	})
+
+	app.Use(mw.Handler())
+	app.Get("/test", func(c *fiber.Ctx) error {
+		return c.SendString("OK")
+	})
+
+	req, _ := http.NewRequest("GET", "/test", nil)
+	_, _ = app.Test(req)
+
+	assert.Equal(t, "custom:/test", capturedKey)
+}
+
+func TestLimitMiddleware_Integration(t *testing.T) {
+	app := fiber.New()
+
+	limiter := ratelimiter.NewSimpleRateLimiter(5, time.Minute)
+	mw := NewLimit(limiter)
+
+	app.Use(mw.Handler())
+	app.Get("/test", func(c *fiber.Ctx) error {
+		return c.SendString("OK")
+	})
+
 	for i := 0; i < 5; i++ {
-		req := httptest.NewRequest("GET", "/test", nil)
-		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("GET", "/test", nil)
+		resp, err := app.Test(req)
+		require.NoError(t, err)
+		assert.Equal(t, 200, resp.StatusCode, "Request %d should succeed", i+1)
+	}
 
-		middleware.ServeHTTP(w, req)
+	req, _ := http.NewRequest("GET", "/test", nil)
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	assert.Equal(t, 429, resp.StatusCode, "6th request should be rejected")
 
-		if w.Code != http.StatusOK {
-			t.Errorf("Request %d: Expected status 200, got %d", i+1, w.Code)
-		}
+	metrics := mw.Metrics()
+	assert.Equal(t, int64(5), metrics.AllowedTotal())
+	assert.Equal(t, int64(1), metrics.RejectedTotal())
+}
+
+func TestLimitMetrics_Reset(t *testing.T) {
+	metrics := NewLimitMetrics()
+
+	metrics.Allowed = 10
+	metrics.Rejected = 5
+
+	metrics.Reset()
+
+	assert.Equal(t, int64(0), metrics.AllowedTotal())
+	assert.Equal(t, int64(0), metrics.RejectedTotal())
+}
+
+func TestSplitAndTrim(t *testing.T) {
+	tests := []struct {
+		input string
+		want  []string
+	}{
+		{"", nil},
+		{"a", []string{"a"}},
+		{"a,b", []string{"a", "b"}},
+		{"a, b", []string{"a", "b"}},
+		{" a , b ", []string{"a", "b"}},
+		{"a,b,c", []string{"a", "b", "c"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := splitAndTrim(tt.input)
+			assert.Equal(t, tt.want, got)
+		})
 	}
 }
 
-func TestRateLimiter_BlocksRequestsOverLimit(t *testing.T) {
-	rl := NewRateLimiter(3, time.Minute)
-
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
-	})
-
-	middleware := rl.Middleware(handler)
-
-	// Make 3 requests (should succeed)
-	for i := 0; i < 3; i++ {
-		req := httptest.NewRequest("GET", "/test", nil)
-		w := httptest.NewRecorder()
-		middleware.ServeHTTP(w, req)
-
-		if w.Code != http.StatusOK {
-			t.Errorf("Request %d: Expected status 200, got %d", i+1, w.Code)
-		}
+func TestIsValidIP(t *testing.T) {
+	tests := []struct {
+		ip   string
+		want bool
+	}{
+		{"", false},
+		{"192.168.1.1", true},
+		{"10.0.0.1", true},
+		{"256.1.1.1", true},
+		{"abc", false},
+		{"192.168.1", false},
 	}
 
-	// 4th request should be rate limited
-	req := httptest.NewRequest("GET", "/test", nil)
-	w := httptest.NewRecorder()
-	middleware.ServeHTTP(w, req)
-
-	if w.Code != http.StatusTooManyRequests {
-		t.Errorf("Expected status 429 for rate limited request, got %d", w.Code)
+	for _, tt := range tests {
+		t.Run(tt.ip, func(t *testing.T) {
+			assert.Equal(t, tt.want, isValidIP(tt.ip))
+		})
 	}
-
-	if w.Body.String() != "rate limit exceeded\n" {
-		t.Errorf("Expected 'rate limit exceeded' message, got '%s'", w.Body.String())
-	}
-}
-
-func TestRateLimiter_ResetsAfterWindow(t *testing.T) {
-	rl := NewRateLimiter(2, 100*time.Millisecond)
-
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
-	})
-
-	middleware := rl.Middleware(handler)
-
-	// Make 2 requests (use up limit)
-	for i := 0; i < 2; i++ {
-		req := httptest.NewRequest("GET", "/test", nil)
-		w := httptest.NewRecorder()
-		middleware.ServeHTTP(w, req)
-
-		if w.Code != http.StatusOK {
-			t.Errorf("Request %d: Expected status 200, got %d", i+1, w.Code)
-		}
-	}
-
-	// 3rd request should be rate limited
-	req := httptest.NewRequest("GET", "/test", nil)
-	w := httptest.NewRecorder()
-	middleware.ServeHTTP(w, req)
-
-	if w.Code != http.StatusTooManyRequests {
-		t.Errorf("Expected status 429, got %d", w.Code)
-	}
-
-	// Wait for window to expire
-	time.Sleep(150 * time.Millisecond)
-
-	// Now requests should work again
-	req2 := httptest.NewRequest("GET", "/test", nil)
-	w2 := httptest.NewRecorder()
-	middleware.ServeHTTP(w2, req2)
-
-	if w2.Code != http.StatusOK {
-		t.Errorf("Expected status 200 after window reset, got %d", w2.Code)
-	}
-}
-
-func TestRateLimiter_TracksMultipleIPs(t *testing.T) {
-	rl := NewRateLimiter(2, time.Minute)
-
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
-	})
-
-	middleware := rl.Middleware(handler)
-
-	// IP 1 makes 2 requests
-	for i := 0; i < 2; i++ {
-		req := httptest.NewRequest("GET", "/test", nil)
-		req.RemoteAddr = "192.168.1.1:1234"
-		w := httptest.NewRecorder()
-		middleware.ServeHTTP(w, req)
-
-		if w.Code != http.StatusOK {
-			t.Errorf("IP1 Request %d: Expected status 200, got %d", i+1, w.Code)
-		}
-	}
-
-	// IP 2 makes 1 request (leaving room for another)
-	req := httptest.NewRequest("GET", "/test", nil)
-	req.RemoteAddr = "192.168.1.2:1234"
-	w := httptest.NewRecorder()
-	middleware.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("IP2 Request 1: Expected status 200, got %d", w.Code)
-	}
-
-	// IP 1 should be rate limited on 3rd request
-	req1 := httptest.NewRequest("GET", "/test", nil)
-	req1.RemoteAddr = "192.168.1.1:1234"
-	w1 := httptest.NewRecorder()
-	middleware.ServeHTTP(w1, req1)
-
-	if w1.Code != http.StatusTooManyRequests {
-		t.Errorf("IP1: Expected status 429, got %d", w1.Code)
-	}
-
-	// IP 2 should still work (has only made 1 request so far)
-	req2 := httptest.NewRequest("GET", "/test", nil)
-	req2.RemoteAddr = "192.168.1.2:1234"
-	w2 := httptest.NewRecorder()
-	middleware.ServeHTTP(w2, req2)
-
-	if w2.Code != http.StatusOK {
-		t.Errorf("IP2: Expected status 200, got %d", w2.Code)
-	}
-}
-
-func TestRateLimiter_SetRate(t *testing.T) {
-	rl := NewRateLimiter(2, time.Minute)
-
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-
-	middleware := rl.Middleware(handler)
-
-	// Use up the limit
-	for i := 0; i < 2; i++ {
-		req := httptest.NewRequest("GET", "/test", nil)
-		w := httptest.NewRecorder()
-		middleware.ServeHTTP(w, req)
-	}
-
-	// 3rd request should be rate limited
-	req := httptest.NewRequest("GET", "/test", nil)
-	w := httptest.NewRecorder()
-	middleware.ServeHTTP(w, req)
-
-	if w.Code != http.StatusTooManyRequests {
-		t.Errorf("Expected status 429, got %d", w.Code)
-	}
-
-	// Increase rate limit
-	rl.SetRate(5)
-
-	// Now 3rd request should work
-	req2 := httptest.NewRequest("GET", "/test", nil)
-	w2 := httptest.NewRecorder()
-	middleware.ServeHTTP(w2, req2)
-
-	if w2.Code != http.StatusOK {
-		t.Errorf("Expected status 200 after increasing rate, got %d", w2.Code)
-	}
-}
-
-func TestRateLimiter_Reset(t *testing.T) {
-	rl := NewRateLimiter(2, time.Minute)
-
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-
-	middleware := rl.Middleware(handler)
-
-	// Use up the limit
-	for i := 0; i < 2; i++ {
-		req := httptest.NewRequest("GET", "/test", nil)
-		w := httptest.NewRecorder()
-		middleware.ServeHTTP(w, req)
-	}
-
-	// Reset should clear all visitor data
-	rl.Reset()
-
-	// Now requests should work again
-	req := httptest.NewRequest("GET", "/test", nil)
-	w := httptest.NewRecorder()
-	middleware.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("Expected status 200 after reset, got %d", w.Code)
-	}
-}
-
-func TestRateLimiter_GetVisitorCount(t *testing.T) {
-	rl := NewRateLimiter(5, time.Minute)
-
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-
-	middleware := rl.Middleware(handler)
-
-	// Initially 0 visitors
-	if count := rl.GetVisitorCount(); count != 0 {
-		t.Errorf("Expected 0 visitors, got %d", count)
-	}
-
-	// Make requests from 3 different IPs
-	ips := []string{"192.168.1.1:1234", "192.168.1.2:1234", "192.168.1.3:1234"}
-	for _, ip := range ips {
-		req := httptest.NewRequest("GET", "/test", nil)
-		req.RemoteAddr = ip
-		w := httptest.NewRecorder()
-		middleware.ServeHTTP(w, req)
-	}
-
-	// Should have 3 visitors
-	if count := rl.GetVisitorCount(); count != 3 {
-		t.Errorf("Expected 3 visitors, got %d", count)
-	}
-}
-
-func TestRateLimiter_RateLimitHeaders(t *testing.T) {
-	rl := NewRateLimiter(3, time.Minute)
-
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-
-	middleware := rl.Middleware(handler)
-
-	// Make a request
-	req := httptest.NewRequest("GET", "/test", nil)
-	w := httptest.NewRecorder()
-	middleware.ServeHTTP(w, req)
-
-	// Check headers
-	if w.Header().Get("X-RateLimit-Limit") == "" {
-		t.Error("Expected X-RateLimit-Limit header")
-	}
-
-	if w.Header().Get("X-RateLimit-Remaining") == "" {
-		t.Error("Expected X-RateLimit-Remaining header")
-	}
-
-	if w.Header().Get("X-RateLimit-Reset") == "" {
-		t.Error("Expected X-RateLimit-Reset header")
-	}
-}
-
-func TestRateLimiter_ConcurrentRequests(t *testing.T) {
-	rl := NewRateLimiter(10, time.Minute)
-
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-
-	middleware := rl.Middleware(handler)
-
-	done := make(chan bool)
-	// Make 20 concurrent requests (limit is 10)
-	for range 20 {
-		go func() {
-			req := httptest.NewRequest("GET", "/test", nil)
-			w := httptest.NewRecorder()
-			middleware.ServeHTTP(w, req)
-			done <- true
-		}()
-	}
-
-	// Wait for all to complete
-	for range 20 {
-		<-done
-	}
-
-	// Should have some rate limited requests
-	// (We can't easily test exact count due to concurrency, but we verify no panic)
 }

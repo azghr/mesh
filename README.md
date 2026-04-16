@@ -10,6 +10,7 @@ Think of mesh as the foundation beneath your application. It handles the undiffe
 - **Error handling** that maps to HTTP/gRPC status codes automatically  
 - **Resilient HTTP clients** with circuit breakers and retry logic
 - **Redis caching** with built-in metrics, cache-aside pattern, and stampede protection
+- **Distributed rate limiting** with sliding window algorithm (per-IP, per-user)
 - **Structured logging** for development (pretty terminal) and production (JSON)
 - **Configuration** from YAML files with environment variable overrides
 
@@ -102,12 +103,13 @@ func main() {
 | `config` | Load and validate configuration | `Load()`, `GetEnv()`, `ValidateProduction()` |
 | `database` | PostgreSQL connection pool | `NewPool()`, `WithTransaction()`, `ScanRows()` |
 | `cache` | Redis caching with metrics + dedup | `GetOrSet()`, `DedupStore`, `HitRate()` |
+| `ratelimiter` | Distributed rate limiting | `RedisRateLimiter`, `SimpleRateLimiter`, `Allow()` |
 | `errors` | Structured errors → HTTP/gRPC | `NotFoundError()`, `ToHTTPStatus()`, `ToGRPCStatus()` |
 | `logger` | Structured logging | `New()`, `With()`, `FormatServiceName()` |
 | `http` | Resilient HTTP patterns | `ResilientClient`, `CircuitBreaker`, `Retry()` |
 | `redis` | Redis client wrapper | `NewClient()`, `Ping()`, `Keys()` |
 | `health` | Health checks for k8s | `Checker`, `Register()`, `Status()` |
-| `middleware` | HTTP middleware | `Logging()`, `Recovery()`, `RateLimit()` |
+| `middleware` | HTTP middleware | `Logging()`, `Recovery()`, `Limit()` |
 | `auth` | JWT + RBAC | `RBAC`, `RequirePermission()`, `HasPermission()` |
 | `telemetry` | Observability | `InitTracing()`, `InitMetrics()`, `RecordHTTPRequest()` |
 | `lock` | Distributed locking | `RedisLock`, `Execute()`, `Acquire()` |
