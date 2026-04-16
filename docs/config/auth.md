@@ -1,40 +1,153 @@
 # auth
 
-JWT authentication middleware and Role-Based Access Control (RBAC).
+JWT authentication, Role-Based Access Control (RBAC), and token management.
 
 ## What It Does
 
-Two related but independent pieces:
-1. **Middleware**: Extract and validate JWT tokens, store user info in context
-2. **RBAC**: Define roles and permissions, check if users can perform actions
+Three related pieces:
+1. **JWT Manager**: Token generation, validation, and refresh
+2. **Token Blacklist**: Token invalidation for logout
+3. **RBAC**: Role and permission authorization
 
-## JWT Middleware
-
-### Basic Usage
+## Quick Start
 
 ```go
-// Create middleware with secret
-authMiddleware := auth.NewJWTmiddleware(secretKey)
+// 1. Create JWT manager
+jwtManager := auth.NewJWTManager(auth.JWTConfig{
+    SigningKey:     []byte("your-secret-key"),
+    Issuer:        "your-app",
+    Audience:     "your-api",
+    AccessTokenTTL:  15 * time.Minute,
+    RefreshTokenTTL: 7 * 24 * time.Hour,
+}, rbac)
 
-// Use with Fiber, Gin, etc.
-app.Use(authMiddleware.Handler)
+// 2. Generate tokens
+tokens, err := jwtManager.GenerateToken(ctx, "user123", "user@example.com", nil)
 
-// In handlers, get user info from context
-userID := auth.GetUserID(ctx)
-role := auth.GetRole(ctx)
+// 3. Validate token
+claims, err := jwtManager.ValidateToken(tokenString)
+
+// 4. Refresh tokens
+newTokens, err := jwtManager.RefreshTokens(refreshToken)
 ```
+
+## JWT Manager
 
 ### Configuration
 
 ```go
-config := &auth.JWTConfig{
-    Secret:        "your-secret-key",
-    TokenLookup:   "header:Authorization",  // Where to find token
-    TokenPrefix:   "Bearer",                 // Prefix to strip
-    Expiration:    time.Hour,                // Token expiry
-    SigningMethod: "HS256",
+type JWTConfig struct {
+    SigningKey      []byte          // Secret key for HMAC (HS256/HS384/HS512)
+    PublicKey      *rsa.PublicKey  // RSA public key for RS256 verification
+    PrivateKey     *rsa.PrivateKey // RSA private key for RS256 signing
+    Algorithm     string         // "HS256", "HS384", "HS512", "RS256"
+    Issuer        string         // Token issuer (iss claim)
+    Audience     string         // Expected audience (aud claim)
+    AccessTokenTTL time.Duration // Default: 15 minutes
+    RefreshTokenTTL time.Duration // Default: 7 days
 }
-middleware := auth.NewJWTmiddlewareFromConfig(config)
+```
+
+### Token Generation
+
+```go
+// Basic token generation
+tokens, err := jwtManager.GenerateToken(ctx, "user123", "user@example.com", nil)
+
+// With custom roles
+tokens, err := jwtManager.GenerateToken(ctx, "user123", "email@example.com", []string{"admin", "user:read"})
+
+// Multi-tenant with tenant ID and metadata
+tokens, err := jwtManager.GenerateTokenWithTenant(
+    ctx, 
+    "user123", 
+    "email@example.com",
+    "tenant-abc",           // tenant_id
+    []string{"admin"},       // roles
+    map[string]string{"dept": "engineering"}, // metadata
+)
+
+// Returns: TokenPair{AccessToken, RefreshToken, ExpiresAt, TokenType}
+```
+
+### Token Validation
+
+```go
+claims, err := jwtManager.ValidateToken(tokenString)
+if err != nil {
+    return err // ErrInvalidToken, ErrTokenExpired, ErrInvalidIssuer, ErrInvalidAudience
+}
+
+// Claims contain: UserID, Email, Roles, Permissions, TenantID, Metadata
+fmt.Println(claims.UserID)
+fmt.Println(claims.Roles)
+fmt.Println(claims.TenantID)
+```
+
+### Token Refresh
+
+```go
+// Use refresh token to get new access/refresh pair
+newTokens, err := jwtManager.RefreshTokens(refreshToken)
+```
+
+### Token Invalidation (Logout)
+
+```go
+// Create blacklist (in-memory or Redis-backed)
+blacklist := auth.NewTokenBlacklist()
+
+// For distributed logout, use Redis:
+// blacklist := auth.NewTokenBlacklist()
+// blacklist.SetRedisClient(redisClient)
+
+jwtManager.SetBlacklist(blacklist)
+
+// Invalidate on logout
+jwtManager.InvalidateToken(accessToken)
+
+// Check if token is invalidated
+isBlocked, _ := blacklist.IsBlacklisted(tokenID)
+```
+
+### RSA Keys (Production)
+
+```go
+// Create RSA maker
+rsaMaker, err := auth.NewRSAJWTMaker(2048) // 2048 or 4096 bits
+
+// Create token
+token, _ := rsaMaker.CreateToken("user123")
+
+// Verify token
+claims, _ := rsaMaker.VerifyToken(token)
+
+// Get keys
+publicKey := rsaMaker.PublicKey()
+privateKey := rsaMaker.PrivateKey()
+
+// PEM formatted keys
+pubPEM, _ := rsaMaker.PublicKeyPEM()
+privPEM, _ := rsaMaker.PrivateKeyPEM()
+```
+
+## Fiber Middleware
+
+See `middleware/jwt.go` for Fiber JWT middleware with permission checks.
+
+```go
+import "github.com/azghr/mesh/middleware"
+
+// Configure JWT middleware
+app.Use(middleware.JWT(middleware.JWTConfig{
+    JWTManager: jwtManager,
+    TokenLookup: "header:Authorization", // or "query:token" or "cookie:token"
+}))
+
+// Protect routes with permission checks
+app.Get("/profile", middleware.RequirePermission("user:read"), profileHandler)
+app.Post("/admin", middleware.RequireRole("admin"), adminHandler)
+app.Get("/manage", middleware.RequireAnyPermission("user:write", "admin:write"), manageHandler)
 ```
 
 ## RBAC (Role-Based Access Control)
@@ -44,7 +157,6 @@ middleware := auth.NewJWTmiddlewareFromConfig(config)
 ```go
 // With database-backed role store
 roleStore := auth.NewDatabaseRoleStore(func(ctx context.Context, userID string) (auth.Role, error) {
-    // Query your database
     return db.GetUserRole(ctx, userID)
 })
 rbac := auth.NewRBAC(roleStore)
@@ -95,9 +207,6 @@ PermAPICreate, PermAPIRead, PermAPIDelete
 
 // Workflow
 PermWorkflowCreate, PermWorkflowRead, PermWorkflowWrite, PermWorkflowDelete
-
-// ZK Proof
-PermZKCreate, PermZKRead, PermZKVerify
 ```
 
 ### Checking Permissions
@@ -110,7 +219,7 @@ hasPerm := rbac.HasPermission(role, PermWalletRead)
 hasAny := rbac.HasAnyPermission(role, PermWalletRead, PermAdminRead)
 
 // Check if role has ALL permissions
-hasAll := rbac.HasAllPermissions(role, PermWalletRead, PermPortfolioRead)
+hasAll := rbac.HasAllPermissions(role, PermWalletRead, PermAnalyticsRead)
 
 // Get all permissions for a user
 perms, err := rbac.GetUserPermissions(ctx, userID)
@@ -135,11 +244,9 @@ rbac.RequireRole(RoleAdmin)(handler)
 ### gRPC Interceptors
 
 ```go
-// gRPC server with permission checking
 server := grpc.NewServer(
     grpc.UnaryInterceptor(rbac.GRPCRequirePermission(PermUserRead)),
 )
-
 // Or require role
 server := grpc.NewServer(
     grpc.UnaryInterceptor(rbac.GRPCRequireRole(RoleAdmin)),
@@ -173,4 +280,15 @@ ctx = auth.WithRole(ctx, RoleAdmin)
 // Get from context
 userID := auth.GetUserID(ctx)
 role, ok := auth.GetRole(ctx)
+```
+
+## OAuth Helpers
+
+```go
+// Generate secure random token (for CSRF, OAuth state, etc.)
+state := auth.GenerateRandomState()
+secureToken := auth.GenerateSecureToken(32) // 32 bytes
+
+// Verify OAuth state (constant-time comparison)
+valid := auth.VerifyState(expectedState, actualState)
 ```
