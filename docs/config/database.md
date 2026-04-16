@@ -101,4 +101,92 @@ type Config struct {
     ConnMaxLifetime time.Duration // How long connections live (default: 1h)
     ConnMaxIdleTime time.Duration // How long idle connections live
 }
+
+## Database Migrations
+
+Manages database schema versioning with rollback support.
+
+### MigrationRunner
+
+```go
+import "github.com/azghr/mesh/database"
+
+// Define migrations (must be sorted by Version ascending)
+migrations := []database.Migration{
+    {
+        Version: 2026041601,
+        Name:    "create_users_table",
+        Up: `CREATE TABLE IF NOT EXISTS users (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            email VARCHAR(255) UNIQUE NOT NULL,
+            name VARCHAR(255) NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        )`,
+        Down: `DROP TABLE IF EXISTS users`,
+    },
+    {
+        Version: 2026041602,
+        Name:    "create_sessions_table",
+        Up: `CREATE TABLE IF NOT EXISTS sessions (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        )`,
+        Down: `DROP TABLE IF EXISTS sessions`,
+        Check: `SELECT 1 FROM users LIMIT 1`, // Pre-flight check
+    },
+}
+
+runner := database.NewMigrationRunner(db, migrations)
+
+// Apply pending migrations
+if err := runner.Run(ctx); err != nil {
+    return err
+}
+
+// Rollback last migration
+if err := runner.Rollback(ctx, 1); err != nil {
+    return err
+}
+```
+
+### Configuration
+
+```go
+type Migration struct {
+    Version int64  // Version number (e.g., 2026041601)
+    Name    string // Migration name
+    Up     string // SQL to apply
+    Down   string // SQL to rollback
+    Check  string // Optional pre-flight check
+}
+```
+
+### Status
+
+```go
+status, err := runner.Status(ctx)
+// Returns: [{Version: 2026041601, Name: "create_users_table", State: "applied"}, {Version: 2026041602, Name: "create_sessions_table", State: "pending"}]
+```
+
+### Helpers
+
+```go
+// Get pending migrations
+pending, err := database.GetPendingMigrations(db, migrations)
+
+// Validate migration order
+err := database.ValidateMigrations(migrations)
+
+// Generate version from date
+version := database.GenerateMigrationVersion(time.Now(), 1) // e.g., 2026041601
+```
+
+### Best Practices
+
+1. Keep migrations small and reversible
+2. Use descriptive names: `2026041601_create_users_table`
+3. Always test rollbacks in development
+4. Use `Check` for dependencies (e.g., check parent table exists)
+5. Run migrations on startup with proper locking
 ```
