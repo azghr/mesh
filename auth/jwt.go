@@ -2,16 +2,27 @@
 //
 // This package implements JWT token generation, validation, and refresh
 // functionality with support for both HMAC and RSA signing algorithms.
+// It integrates with the RBAC system for permission-based access control.
+//
+// # Overview
+//
+// The auth package provides two main components:
+//
+//   - JWTManager: Handles token issuance, validation, refresh, and blacklisting
+//   - TokenBlacklist: Manages revoked tokens for logout functionality
+//
+// JWT tokens contain standard claims (subject, issuer, audience, expiration)
+// plus custom claims for roles and permissions from the RBAC system.
 //
 // # Token Generation
 //
 // Generate access/refresh token pairs for authenticated users:
 //
 //	jwtManager := auth.NewJWTManager(auth.JWTConfig{
-//	    SigningKey:     []byte("your-secret-key"),
-//	    Issuer:        "your-app",
-//	    Audience:     "your-api",
-//	    AccessTokenTTL: 15 * time.Minute,
+//	    SigningKey:        []byte("your-secret-key"),
+//	    Issuer:           "your-app",
+//	    Audience:         "your-api",
+//	    AccessTokenTTL:  15 * time.Minute,
 //	    RefreshTokenTTL: 7 * 24 * time.Hour,
 //	}, rbac)
 //
@@ -42,11 +53,19 @@
 //
 // # RSA Support
 //
-// For production, use RSA keys:
+// For production environments, use RSA keys for enhanced security:
 //
 //	rsaMaker, _ := auth.NewRSAJWTMaker(2048)
 //	accessToken, _ := rsaMaker.CreateToken("user123")
 //	claims, _ := rsaMaker.VerifyToken(accessToken)
+//
+// # Security Considerations
+//
+//   - Always use RS256 (RSA) in production with key rotation
+//   - Keep signing keys secure; never log or expose them
+//   - Set appropriate token TTLs (shorter access, longer refresh)
+//   - Implement token rotation on privilege escalation
+//   - Use the blacklist for sensitive operations (password change, logout)
 package auth
 
 import (

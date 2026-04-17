@@ -1,3 +1,67 @@
+// Package middleware provides HTTP middleware for Fiber applications.
+//
+// This package includes JWT authentication, RBAC authorization, CORS, security
+// headers, rate limiting, and other common HTTP middleware.
+//
+// # JWT Middleware
+//
+// The JWT middleware validates tokens and extracts claims into context.
+// It supports multiple token locations (header, query, cookie) and integrates
+// with the auth package for token management.
+//
+// # Basic Usage
+//
+// Configure JWT middleware:
+//
+//	jwtMiddleware := middleware.JWT(middleware.JWTConfig{
+//	    JWTManager:  jwtManager,
+//	    TokenLookup: "header:Authorization",
+//	    ErrorHandler: func(c *fiber.Ctx) error {
+//	        return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+//	            "error": "invalid token",
+//	        })
+//	    },
+//	})
+//
+//	app.Use(jwtMiddleware)
+//
+// Token claims are available in handlers:
+//
+//	func handler(c *fiber.Ctx) error {
+//	    claims := c.Locals("jwt_claims").(*auth.Claims)
+//	    userID := claims.UserID
+//	    // ...
+//	}
+//
+// # Permission Middleware
+//
+// Require permission checks:
+//
+//	app.Get("/admin", middleware.RequirePermission("admin:read"), adminHandler)
+//
+// Require any of multiple permissions:
+//
+//	app.Get("/resource", middleware.RequireAnyPermission("resource:read", "resource:write"), handler)
+//
+// Require role:
+//
+//	app.Get("/dashboard", middleware.RequireRole("admin", "manager"), dashboardHandler)
+//
+// # Token Lookup Format
+//
+// Token location format: "source:key"
+//   - "header:Authorization" - Bearer token in header
+//   - "query:token" - Token in query parameter
+//   - "cookie:session" - Token in cookie
+//
+// # Best Practices
+//
+//   - Place JWT middleware early in the middleware chain
+//   - Use RequirePermission after JWT validation
+//   - Return structured error responses
+//   - Log failed authentication attempts
+//   - Use HTTPS in production
+
 package middleware
 
 import (

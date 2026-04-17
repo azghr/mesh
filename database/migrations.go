@@ -1,15 +1,21 @@
 // Package database provides database connection pool and migration utilities.
 //
 // This package includes connection pooling and migration management for
-// PostgreSQL databases.
+// PostgreSQL databases. It provides a robust migration system for versioned
+// schema changes with rollback support.
+//
+// # Overview
+//
+// The database package provides:
+//
+//   - DB: PostgreSQL connection pool wrapper with health checking
+//   - MigrationRunner: Version-controlled schema migration runner
+//   - Migration: Individual migration definition with up/down SQL
+//
+// The migration system ensures atomic, ordered application of schema
+// changes and tracks migration history in a metadata table.
 //
 // # Migration System
-//
-// The migration system provides version-controlled schema changes with
-// automatic rollback support. Migrations are applied in order and tracked
-// in a metadata table.
-//
-// # Basic Usage
 //
 // Define migrations sorted by version:
 //
@@ -30,13 +36,42 @@
 //	    return err
 //	}
 //
+// # Migration Runner Usage
+//
+// The MigrationRunner provides several operations:
+//
+//	// Run pending migrations
+//	if err := runner.Run(ctx); err != nil {
+//	    return err
+//	}
+//
+//	// Rollback to a specific version
+//	if err := runner.Rollback(ctx, 2026041501); err != nil {
+//	    return err
+//	}
+//
+//	// Check migration status
+//	status, _ := runner.Status(ctx)
+//
 // # Best Practices
 //
-//  1. Always define both Up and Down SQL
-//  2. Keep migrations small and focused
-//  3. Use Check for dependency validation
-//  4. Test rollbacks in development
-//  5. Version format: YYYYMMDDNN (e.g., 2026041601)
+//   - Always define both Up and Down SQL
+//   - Keep migrations small and focused on single changes
+//   - Use Check for dependency validation before running
+//   - Test rollbacks in development/staging
+//   - Version format: YYYYMMDDNN (e.g., 2026041601)
+//   - Never modify applied migrations; create new ones
+//   - Use transactions for multi-step migrations
+//
+// # Metadata Table
+//
+// Migrations are tracked in a _schema_migrations table:
+//
+//	CREATE TABLE IF NOT EXISTS _schema_migrations (
+//	    version BIGINT PRIMARY KEY,
+//	    name VARCHAR(255) NOT NULL,
+//	    applied_at TIMESTAMP DEFAULT NOW()
+//	);
 package database
 
 import (

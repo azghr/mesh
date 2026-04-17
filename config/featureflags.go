@@ -1,14 +1,21 @@
 // Package config provides configuration, feature flags, and related utilities.
 //
-// This package handles loading configuration from YAML files,
-// environment variables, and feature flags for gradual rollouts.
+// This package handles loading configuration from YAML files, environment
+// variables, and feature flags for gradual rollouts and A/B testing.
+//
+// # Overview
+//
+// The config package provides:
+//
+//   - Config: YAML-based configuration loading with env var overrides
+//   - FeatureFlagService: Redis-backed feature flags with targeting rules
+//   - FeatureFlagMiddleware: Fiber middleware for automatic flag evaluation
+//
+// Feature flags enable gradual rollouts, A/B testing, kill switches, and
+// role-based feature access. The service uses Redis for flag storage with
+// local memory caching for performance.
 //
 // # Feature Flags
-//
-// Feature flags enable gradual rollouts, A/B testing, and kill switches.
-// The service uses Redis for flag storage with local memory caching.
-//
-// # Basic Usage
 //
 // Create a feature flag service:
 //
@@ -17,12 +24,13 @@
 // Define a flag with targeting rules:
 //
 //	flag := config.FeatureFlag{
-//	    Key:      "new_user_profile",
-//	    Enabled:  true,
+//	    Key:         "new_user_profile",
+//	    Description: "New user profile redesign",
+//	    Enabled:     true,
 //	    Rules: []config.FlagRule{
 //	        {Percentage: 10},                    // 10% rollout
 //	        {UserIDs: []string{"u1", "u2"}},     // beta users
-//	        {Roles: []string{"admin"}},          // admin-only
+//	        {Roles: []string{"admin"}},           // admin-only
 //	    },
 //	}
 //
@@ -35,9 +43,9 @@
 // # Rule Evaluation Order
 //
 // Rules are evaluated in order. First match wins:
-//  1. User whitelist (UserIDs)
-//  2. Role match (Roles)
-//  3. Percentage rollout (consistent hashing)
+//  1. User whitelist (UserIDs) - explicit allow list
+//  2. Role match (Roles) - role-based access
+//  3. Percentage rollout (consistent hashing) - gradual rollout
 //
 // # Middleware Integration
 //
@@ -45,12 +53,17 @@
 //
 //	app.Use(config.FeatureFlagMiddleware(ffs, "feature1", "feature2"))
 //
+// Features not in the allowed list return 404. Use FeatureFlagMiddlewareOptional
+// for optional feature checks.
+//
 // # Best Practices
 //
-//  1. Fail closed: default to disabled
-//  2. Use consistent hashing for stable rollouts
-//  3. Monitor evaluation rates in metrics
-//  4. Layer rules: whitelist → roles → percentage
+//   - Fail closed: default to disabled if flag not found
+//   - Use consistent hashing for stable percentage rollouts
+//   - Monitor evaluation rates in metrics
+//   - Layer rules: whitelist → roles → percentage
+//   - Document flags in code and flag management UI
+//   - Clean up deprecated flags after full rollout
 package config
 
 import (
