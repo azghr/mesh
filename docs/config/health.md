@@ -261,3 +261,76 @@ app.Get("/startupz", func(c *fiber.Ctx) error {
     // ...
 })
 ```
+
+## gRPC Health Checks
+
+The package supports the standard gRPC Health Checking Protocol.
+
+### Checking Remote gRPC Services
+
+Check if a remote gRPC service is healthy:
+
+```go
+checker.RegisterProbe(health.ProbeDefinition{
+    Name:  "my-grpc-service",
+    Type:  health.CheckTypeReadiness,
+    Check: health.GRPCReadinessCheck("localhost:50051", health.GrpcHealthConfig{
+        Timeout: 3 * time.Second,
+    }),
+})
+```
+
+The check returns an error if:
+- Connection fails
+- gRPC health check returns non-SERVING status
+
+### Liveness Check
+
+```go
+checker.Register("grpc-liveness", health.GRPCLivenessCheck("localhost:50051", health.GrpcHealthConfig{
+    Timeout: 3 * time.Second,
+}))
+```
+
+### Implementing gRPC Health Server
+
+For your own gRPC services, implement the health server:
+
+```go
+// Create the health server
+healthServer := health.NewGRPCHealthServer()
+
+// Set overall serving status
+healthServer.SetServingStatus(grpchealth.HealthCheckResponse_SERVING)
+
+// Set service-specific status
+healthServer.SetServiceStatus("my.service", grpchealth.HealthCheckResponse_SERVING)
+
+// Register with your gRPC server
+grpchealth.RegisterHealthServer(grpcServer, healthServer)
+
+// Use in health checks
+checker.RegisterProbe(health.ProbeDefinition{
+    Name:  "grpc-health",
+    Type:  health.CheckTypeReadiness,
+    Check: healthServer.GRPCheck(),
+})
+```
+
+### Changing Health Status
+
+```go
+// Mark service as not serving (e.g., during maintenance)
+healthServer.SetServingStatus(grpchealth.HealthCheckResponse_NOT_SERVING)
+
+// Mark specific service as not serving
+healthServer.SetServiceStatus("my.service", grpchealth.HealthCheckResponse_NOT_SERVING)
+```
+
+### Status Values
+
+```go
+grpchealth.HealthCheckResponse_SERVING          // Service is serving
+grpchealth.HealthCheckResponse_NOT_SERVING       // Service is not serving
+grpchealth.HealthCheckResponse_SERVICE_UNKNOWN  // Unknown status
+```
