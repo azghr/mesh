@@ -3,10 +3,25 @@
 // This package includes circuit breaker, retry logic, and fallback support for
 // making resilient HTTP calls that handle failures gracefully.
 //
-// # Fallback Support
+// # Overview
+//
+// The http package provides three main resilience patterns:
+//
+//   - Circuit Breaker: Prevents cascading failures
+//   - Fallback Responses: Degraded mode when services fail
+//   - Retry Logic: Exponential backoff for transient failures
+//
+// Combined, these enable graceful degradation in production.
+//
+// # Fallback System
 //
 // The fallback system provides degraded responses when services fail.
-// Combined with the circuit breaker, this enables graceful degradation.
+// When combined with the circuit breaker:
+//
+//  1. Circuit opens after MaxFailures
+//  2. Requests return fallback immediately
+//  3. No error returned to clients
+//  4. Service can recover silently
 //
 // # Basic Usage
 //
@@ -28,26 +43,28 @@
 //	    return fetchUsers(ctx)
 //	})
 //	if err != nil {
-//	    // Both circuit is open and no fallback - real error
+//	    // Both circuit is open AND no fallback registered
+//	    // This is a real error
 //	}
 //
-// # Fallback Response
+// # Components
 //
 // FallbackResponse contains:
 //   - Content: the fallback data to return
 //   - StatusCode: HTTP status code to use
 //   - TTL: how long to cache the fallback
 //
-// Cached fallbacks avoid repeated service calls during outages.
-// TTL should be set based on data freshness requirements.
+// FallbackRegistry stores multiple service fallbacks.
+// FallbackClient combines circuit breaker with fallbacks.
 //
 // # Best Practices
 //
-//   - Set appropriate TTLs based on data freshness needs
-//   - Log fallback usage for monitoring
-//   - Return partial data when possible (e.g., cached list)
+//   - Set TTLs based on data freshness requirements
+//   - Log fallback usage for monitoring (alert on high rate)
+//   - Return partial data when possible (cached list, empty results)
 //   - Use for read-only operations primarily
 //   - Monitor circuit breaker state changes
+//   - Set up alerting for circuit open events
 package http
 
 import (

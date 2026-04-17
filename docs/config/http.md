@@ -144,6 +144,73 @@ if cb.IsOpen() {
 }
 ```
 
+## Fallback Support
+
+Graceful degradation when services fail. Returns cached fallback responses instead of errors when circuit is open.
+
+### Basic Usage
+
+```go
+// Create fallback client
+client := http.NewFallbackClient(nil)
+
+// Register fallback for a service
+client.SetFallback("users", http.FallbackResponse{
+    Content:   []map[string]string{{"id": "1", "name": "Default User"}},
+    StatusCode: 200,
+    TTL:       5*time.Minute,
+})
+
+// Execute with fallback
+result, err := client.Execute(ctx, "users", func() (interface{}, error) {
+    return fetchUsers(ctx)
+})
+
+// No error returned if fallback exists - even if circuit is open
+// result contains fallback data
+```
+
+### Fallback Components
+
+```go
+// FallbackResponse - the fallback data
+type FallbackResponse struct {
+    Content   interface{}   // Fallback data (any JSON-serializable type)
+    StatusCode int        // HTTP status code to return
+    TTL       time.Duration // Cache duration for fallback
+}
+
+// FallbackRegistry - stores multiple service fallbacks
+registry := http.NewFallbackRegistry()
+registry.Register("users", fallback)
+fb, ok := registry.Get("users")
+
+// FallbackClient - combines circuit breaker with fallbacks
+client := http.NewFallbackClient(circuitBreaker)
+client.SetFallback("service", fallbackResp)
+```
+
+### Caching Fallbacks
+
+```go
+// Fallbacks are cached locally to avoid repeated service calls
+// TTL determines how long to use cached fallback
+response := http.FallbackResponse{
+    Content:   cachedData,
+    StatusCode: 200,
+    TTL:       5*time.Minute,  // Cache for 5 minutes
+}
+
+// Cache is automatic - same fallback returned during outage
+```
+
+### Best Practices
+
+- Return partial data (empty arrays, cached lists) instead of errors
+- Set TTL based on data freshness requirements
+- Monitor fallback usage - high rate indicates problems
+- Use for read-only operations primarily
+
 ## Network Error Helpers
 
 ```go

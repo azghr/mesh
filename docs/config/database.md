@@ -189,4 +189,48 @@ version := database.GenerateMigrationVersion(time.Now(), 1) // e.g., 2026041601
 3. Always test rollbacks in development
 4. Use `Check` for dependencies (e.g., check parent table exists)
 5. Run migrations on startup with proper locking
+
+## Prepared Statement Cache
+
+Reduces database overhead by caching compiled SQL statements.
+
+### Basic Usage
+
+```go
+cache := database.NewStmtCache(db, database.StmtCacheConfig{
+    MaxStatements: 100,
+    TTL:         time.Hour,
+})
+
+// Use for queries
+rows, err := cache.Query(ctx, "SELECT * FROM users WHERE id = $1", userID)
+result, err := cache.Exec(ctx, "INSERT INTO ...", args...)
+var user User
+row := cache.QueryRow(ctx, "SELECT * FROM users WHERE id = $1", id)
+row.Scan(&user)
+```
+
+### Configuration
+
+```go
+type StmtCacheConfig struct {
+    MaxStatements int           // Max cached statements (default: 100)
+    TTL           time.Duration // Statement time-to-live (default: 1 hour)
+}
+```
+
+### Statistics
+
+```go
+hits, misses, evictions := cache.Stats()
+// Monitor hit rate: hits / (hits + misses)
+// Good hit rate is > 80%
+```
+
+### Best Practices
+
+- Use for read-heavy workloads
+- Monitor hit rates - adjust MaxStatements if low
+- Clear cache periodically for schema changes
+- Use separate caches for different query patterns
 ```
