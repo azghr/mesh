@@ -45,9 +45,11 @@ package middleware
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"unicode"
 )
 
 // ValidationMiddleware provides HTTP request validation
@@ -134,4 +136,129 @@ func ValidateContentType(ct string, allowedTypes []string) bool {
 		}
 	}
 	return false
+}
+
+type ValidationError struct {
+	Field   string
+	Message string
+}
+
+func (e *ValidationError) Error() string {
+	return e.Field + ": " + e.Message
+}
+
+type Validator interface {
+	Validate(value interface{}) error
+}
+
+type ValidatorFunc func(value interface{}) error
+
+func (f ValidatorFunc) Validate(value interface{}) error {
+	return f(value)
+}
+
+type ValidationRule struct {
+	Name     string
+	Fn       ValidatorFunc
+	ErrorMsg string
+}
+
+type FieldValidator struct {
+	rules map[string][]ValidationRule
+}
+
+func NewFieldValidator() *FieldValidator {
+	return &FieldValidator{
+		rules: make(map[string][]ValidationRule),
+	}
+}
+
+func (v *FieldValidator) AddRule(field string, rule ValidationRule) *FieldValidator {
+	v.rules[field] = append(v.rules[field], rule)
+	return v
+}
+
+func (v *FieldValidator) Validate(data interface{}) map[string]*ValidationError {
+	errs := make(map[string]*ValidationError)
+	vv, ok := data.(map[string]interface{})
+	if !ok {
+		return errs
+	}
+
+	for field, rules := range v.rules {
+		value := vv[field]
+		for _, rule := range rules {
+			if err := rule.Fn.Validate(value); err != nil {
+				errs[field] = &ValidationError{
+					Field:   field,
+					Message: rule.ErrorMsg,
+				}
+				break
+			}
+		}
+	}
+	return errs
+}
+
+func ValidateEmail(value interface{}) error {
+	str, ok := value.(string)
+	if !ok {
+		return nil
+	}
+	if str == "" {
+		return nil
+	}
+	at := strings.Index(str, "@")
+	if at <= 0 || at == len(str)-1 {
+		return fmt.Errorf("invalid email format")
+	}
+	domain := str[at+1:]
+	if !strings.Contains(domain, ".") || domain == "." {
+		return fmt.Errorf("invalid email format")
+	}
+	return nil
+}
+
+func ValidatePassword(value interface{}) error {
+	str, ok := value.(string)
+	if !ok {
+		return nil
+	}
+	if str == "" {
+		return nil
+	}
+	if len(str) < 8 {
+		return fmt.Errorf("password must be at least 8 characters")
+	}
+	hasUpper, hasLower, hasDigit := false, false, false
+	for _, c := range str {
+		switch {
+		case unicode.IsUpper(c):
+			hasUpper = true
+		case unicode.IsLower(c):
+			hasLower = true
+		case unicode.IsDigit(c):
+			hasDigit = true
+		}
+	}
+	if !hasUpper || !hasLower || !hasDigit {
+		return fmt.Errorf("password must contain uppercase, lowercase, and digit")
+	}
+	return nil
+}
+
+func EmailValidator(errorMsg string) ValidationRule {
+	return ValidationRule{
+		Name:     "email",
+		Fn:       ValidatorFunc(ValidateEmail),
+		ErrorMsg: errorMsg,
+	}
+}
+
+func PasswordValidator(errorMsg string) ValidationRule {
+	return ValidationRule{
+		Name:     "password",
+		Fn:       ValidatorFunc(ValidatePassword),
+		ErrorMsg: errorMsg,
+	}
 }

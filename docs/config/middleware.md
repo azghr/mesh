@@ -203,6 +203,71 @@ app.Post("/users", middleware.Validate(userSchema), handler)
 // Returns 400 if validation fails
 ```
 
+### Field Validators
+
+Custom field-level validators for form/JSON input validation.
+
+```go
+import "github.com/azghr/mesh/middleware"
+
+// Create validator with rules
+v := middleware.NewFieldValidator()
+v.AddRule("email", middleware.EmailValidator("invalid email"))
+v.AddRule("password", middleware.PasswordValidator("password too weak"))
+
+// Validate in handler
+func handleRegister(w http.ResponseWriter, r *http.Request) {
+    var data map[string]interface{}
+    json.NewDecoder(r.Body).Decode(&data)
+    
+    errs := v.Validate(data)
+    if len(errs) > 0 {
+        json.NewEncoder(w).Encode(errs)
+        return
+    }
+    // Process registration...
+}
+```
+
+### Built-in Validators
+
+| Validator | Description | Example |
+|-----------|-------------|---------|
+| `EmailValidator` | Validates email format | `test@example.com` |
+| `PasswordValidator` | Min 8 chars, upper, lower, digit | `Password1` |
+
+### Custom Validators
+
+Create custom validation rules with ValidatorFunc:
+
+```go
+rule := middleware.ValidationRule{
+    Name:    "phone",
+    Fn:     middleware.ValidatorFunc(func(value interface{}) error {
+        phone, ok := value.(string)
+        if !ok {
+            return fmt.Errorf("must be string")
+        }
+        if !regexp.MustCompile(`^\+?[0-9]{10,15}$`).MatchString(phone) {
+            return fmt.Errorf("invalid phone format")
+        }
+        return nil
+    }),
+    ErrorMsg: "invalid phone number",
+}
+v.AddRule("phone", rule)
+```
+
+### Request Validation Middleware
+
+HTTP-level request validation (body size, content-type):
+
+```go
+validation := middleware.NewValidationMiddleware()
+validation.SetMaxBodySize(2 << 20) // 2MB
+app.Use(validation.ValidateRequest())
+```
+
 ## All Middleware Available
 
 | Middleware | Purpose |

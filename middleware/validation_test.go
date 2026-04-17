@@ -217,3 +217,88 @@ func TestConcurrentReads(t *testing.T) {
 		<-done
 	}
 }
+
+func TestValidateEmail(t *testing.T) {
+	tests := []struct {
+		name    string
+		email   interface{}
+		wantErr bool
+	}{
+		{"valid email", "test@example.com", false},
+		{"valid email with dot", "test.user@example.com", false},
+		{"missing @", "testexample.com", true},
+		{"@ at start", "@example.com", true},
+		{"@ at end", "test@", true},
+		{"no domain dot", "test@com", true},
+		{"not string", 123, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateEmail(tt.email)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateEmail(%v) error = %v, wantErr %v", tt.email, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidatePassword(t *testing.T) {
+	tests := []struct {
+		name    string
+		pw      interface{}
+		wantErr bool
+	}{
+		{"valid password", "Password1", false},
+		{"valid complex", "MyP@ssw0rd!", false},
+		{"too short", "Pass1", true},
+		{"no uppercase", "password1", true},
+		{"no lowercase", "PASSWORD1", true},
+		{"no digit", "Password", true},
+		{"not string", 123, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidatePassword(tt.pw)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidatePassword(%v) error = %v, wantErr %v", tt.pw, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestFieldValidator(t *testing.T) {
+	v := NewFieldValidator()
+	v.AddRule("email", EmailValidator("invalid email"))
+	v.AddRule("password", PasswordValidator("password too weak"))
+
+	data := map[string]interface{}{
+		"email":    "test@example.com",
+		"password": "ValidPass1",
+	}
+
+	errs := v.Validate(data)
+	if len(errs) > 0 {
+		t.Errorf("Expected no errors, got %v", errs)
+	}
+}
+
+func TestFieldValidator_Error(t *testing.T) {
+	v := NewFieldValidator()
+	v.AddRule("email", EmailValidator("invalid email"))
+	v.AddRule("password", PasswordValidator("password too weak"))
+
+	data := map[string]interface{}{
+		"email":    "invalid-email",
+		"password": "weak",
+	}
+
+	errs := v.Validate(data)
+	if len(errs) != 2 {
+		t.Errorf("Expected 2 errors, got %d", len(errs))
+	}
+	if errs["email"] == nil || errs["password"] == nil {
+		t.Errorf("Expected both email and password errors")
+	}
+}
