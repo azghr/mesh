@@ -6,26 +6,37 @@
 // # Overview
 //
 // The eventbus provides reliable message processing with:
-//   - Automatic retry on failure
+//   - Automatic retry with exponential backoff
 //   - Dead letter queue for failed messages
-//   - Configurable retry count and delay
+//   - Configurable retry behavior
 //
 // When an event handler fails:
-//  1. Retries up to maxRetries times
-//  2. Waits retryDelay between attempts
+//  1. Retries with exponential backoff (prevents thundering herd)
+//  2. Delays: 100ms → 200ms → 400ms → 800ms → ... (capped at max)
 //  3. On final failure, stores in DLQ
 //  4. Optional handler processes dead letter
 //
 // # Basic Usage
 //
-// Create a reliable bus with retry handling:
+// Create a reliable bus with default retry handling:
 //
 //	bus := eventbus.NewReliableBus(3, 100*time.Millisecond, 100)
+//
+// Or with full configuration:
+//
+//	bus := eventbus.NewReliableBusWithConfig(eventbus.RetryConfig{
+//	    MaxRetries:    3,
+//	    InitialDelay: 100*time.Millisecond,
+//	    MaxDelay:     10*time.Second,
+//	    BackoffFactor: 2.0,
+//	    Jitter:       true,
+//	    JitterRange: 0.3,
+//	}, 100)
 //
 // Subscribe with automatic retries:
 //
 //	bus.SubscribeWithRetry("orders.created", func(payload any) {
-//	    // Process order - will retry 3 times on failure
+//	    // Process order - retries with exponential backoff
 //	})
 //
 // Subscribe with dead letter queue:
@@ -77,6 +88,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
+	"math/rand"
 	"sync"
 	"time"
 )
@@ -154,24 +167,77 @@ func (q *DeadLetterQueue) Size() int {
 	return len(q.letters)
 }
 
+// RetryConfig configures retry behavior with exponential backoff.
+type RetryConfig struct {
+	MaxRetries    int           // Maximum retry attempts (default: 3)
+	InitialDelay  time.Duration // Initial delay (default: 100ms)
+	MaxDelay      time.Duration // Maximum delay cap (default: 10s)
+	BackoffFactor float64       // Multiplier for each retry (default: 2.0)
+	Jitter        bool          // Add randomness to delay (default: true)
+	JitterRange   float64       // Jitter range 0.0-1.0 (default: 0.3)
+}
+
+// DefaultRetryConfig returns sensible defaults.
+func DefaultRetryConfig() RetryConfig {
+	return RetryConfig{
+		MaxRetries:    3,
+		InitialDelay:  100 * time.Millisecond,
+		MaxDelay:      10 * time.Second,
+		BackoffFactor: 2.0,
+		Jitter:        true,
+		JitterRange:   0.3,
+	}
+}
+
+// calculateDelay computes delay for a given attempt with exponential backoff.
+func (c *RetryConfig) calculateDelay(attempt int) time.Duration {
+	delay := float64(c.InitialDelay) * math.Pow(c.BackoffFactor, float64(attempt))
+	if delay > float64(c.MaxDelay) {
+		delay = float64(c.MaxDelay)
+	}
+
+	if c.Jitter {
+		jitter := delay * c.JitterRange * rand.Float64()
+		delay -= jitter
+	}
+
+	return time.Duration(delay)
+}
+
 // ReliableBus extends Bus with retry and dead letter handling.
 type ReliableBus struct {
 	*Bus
-	dlq        *DeadLetterQueue
-	maxRetries int
-	retryDelay time.Duration
+	dlq *DeadLetterQueue
+	cfg RetryConfig
 }
 
 // NewReliableBus creates a new reliable event bus with dead letter handling.
 func NewReliableBus(maxRetries int, retryDelay time.Duration, dlqSize int) *ReliableBus {
+	cfg := DefaultRetryConfig()
+	cfg.MaxRetries = maxRetries
+	if retryDelay > 0 {
+		cfg.InitialDelay = retryDelay
+	}
+
 	bus := New()
 	dlq := NewDeadLetterQueue(dlqSize, nil)
 
 	return &ReliableBus{
-		Bus:        bus,
-		dlq:        dlq,
-		maxRetries: maxRetries,
-		retryDelay: retryDelay,
+		Bus: bus,
+		dlq: dlq,
+		cfg: cfg,
+	}
+}
+
+// NewReliableBusWithConfig creates a reliable bus with full configuration.
+func NewReliableBusWithConfig(cfg RetryConfig, dlqSize int) *ReliableBus {
+	bus := New()
+	dlq := NewDeadLetterQueue(dlqSize, nil)
+
+	return &ReliableBus{
+		Bus: bus,
+		dlq: dlq,
+		cfg: cfg,
 	}
 }
 
@@ -191,11 +257,11 @@ func (b *ReliableBus) SubscribeWithRetryAndDLQ(topic string, handler Handler) fu
 	return b.Bus.Subscribe(topic, wrappedHandler)
 }
 
-// executeWithRetry executes a handler with retry logic.
+// executeWithRetry executes a handler with exponential backoff retry.
 func (b *ReliableBus) executeWithRetry(topic string, payload any, handler Handler) {
 	var lastErr error
 
-	for attempt := 0; attempt <= b.maxRetries; attempt++ {
+	for attempt := 0; attempt <= b.cfg.MaxRetries; attempt++ {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
@@ -209,8 +275,9 @@ func (b *ReliableBus) executeWithRetry(topic string, payload any, handler Handle
 			return // Success
 		}
 
-		if attempt < b.maxRetries {
-			time.Sleep(b.retryDelay)
+		if attempt < b.cfg.MaxRetries {
+			delay := b.cfg.calculateDelay(attempt)
+			time.Sleep(delay)
 		}
 	}
 
@@ -220,7 +287,7 @@ func (b *ReliableBus) executeWithRetry(topic string, payload any, handler Handle
 		Topic:    topic,
 		Payload:  payloadBytes,
 		Error:    lastErr.Error(),
-		Attempts: b.maxRetries + 1,
+		Attempts: b.cfg.MaxRetries + 1,
 		Received: time.Now(),
 		LastTry:  time.Now(),
 	})
