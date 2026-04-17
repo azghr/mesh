@@ -39,11 +39,13 @@ const (
 	GRPCHealthService = "grpc.health.v1.Health"
 )
 
+// GrpcHealthConfig holds configuration for a gRPC health check
 type GrpcHealthConfig struct {
 	Address string
 	Timeout time.Duration
 }
 
+// GRPCReadinessCheck creates a readiness check for a remote gRPC service
 func GRPCReadinessCheck(address string, cfg GrpcHealthConfig) func(ctx context.Context) error {
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 3 * time.Second
@@ -76,6 +78,7 @@ func GRPCReadinessCheck(address string, cfg GrpcHealthConfig) func(ctx context.C
 	}
 }
 
+// GRPCLivenessCheck creates a liveness check for a remote gRPC service
 func GRPCLivenessCheck(address string, cfg GrpcHealthConfig) func(ctx context.Context) error {
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 3 * time.Second
@@ -100,12 +103,14 @@ func GRPCLivenessCheck(address string, cfg GrpcHealthConfig) func(ctx context.Co
 	}
 }
 
+// GRPCHealthServer implements the gRPC health checking protocol
 type GRPCHealthServer struct {
 	mu       sync.Mutex
 	services map[string]grpchealth.HealthCheckResponse_ServingStatus
 	status   grpchealth.HealthCheckResponse_ServingStatus
 }
 
+// NewGRPCHealthServer creates a new gRPC health server
 func NewGRPCHealthServer() *GRPCHealthServer {
 	return &GRPCHealthServer{
 		services: make(map[string]grpchealth.HealthCheckResponse_ServingStatus),
@@ -113,18 +118,21 @@ func NewGRPCHealthServer() *GRPCHealthServer {
 	}
 }
 
+// SetServingStatus sets the overall serving status for the server
 func (s *GRPCHealthServer) SetServingStatus(status grpchealth.HealthCheckResponse_ServingStatus) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.status = status
 }
 
+// SetServiceStatus sets the serving status for a specific service
 func (s *GRPCHealthServer) SetServiceStatus(service string, status grpchealth.HealthCheckResponse_ServingStatus) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.services[service] = status
 }
 
+// GetServingStatus returns the serving status for a service (empty = overall)
 func (s *GRPCHealthServer) GetServingStatus(service string) grpchealth.HealthCheckResponse_ServingStatus {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -139,16 +147,19 @@ func (s *GRPCHealthServer) GetServingStatus(service string) grpchealth.HealthChe
 	return grpchealth.HealthCheckResponse_SERVICE_UNKNOWN
 }
 
+// Check implements the gRPC Health service Check method
 func (s *GRPCHealthServer) Check(ctx context.Context, req *grpchealth.HealthCheckRequest) (*grpchealth.HealthCheckResponse, error) {
 	return &grpchealth.HealthCheckResponse{
 		Status: s.GetServingStatus(req.Service),
 	}, nil
 }
 
+// Watch implements the gRPC Health service Watch method
 func (s *GRPCHealthServer) Watch(req *grpchealth.HealthCheckRequest, stream grpchealth.Health_WatchServer) error {
 	return nil
 }
 
+// GRPCheck returns a health.Check function for use with DeepHealthChecker
 func (s *GRPCHealthServer) GRPCheck() func(ctx context.Context) error {
 	return func(ctx context.Context) error {
 		status := s.GetServingStatus("")

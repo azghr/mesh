@@ -13,6 +13,25 @@
 //	validation.SetMaxBodySize(2 << 20) // 2MB
 //	http.Handle("/api", validation.ValidateRequest()(handler))
 //
+// # Field Validators
+//
+// The FieldValidator provides custom field-level validation for form/JSON input:
+//   - Email validation
+//   - Password strength validation
+//   - Custom rule registration
+//
+// Example usage:
+//
+//	v := middleware.NewFieldValidator()
+//	v.AddRule("email", middleware.EmailValidator("invalid email"))
+//	v.AddRule("password", middleware.PasswordValidator("password too weak"))
+//
+//	// Validate in handler
+//	errs := v.Validate(data)
+//	if len(errs) > 0 {
+//	    return handleValidationError(w, errs)
+//	}
+//
 // # Rate Limiting Middleware
 //
 // The RateLimiter provides token-bucket rate limiting per IP address:
@@ -138,6 +157,7 @@ func ValidateContentType(ct string, allowedTypes []string) bool {
 	return false
 }
 
+// ValidationError represents a validation error for a specific field
 type ValidationError struct {
 	Field   string
 	Message string
@@ -147,37 +167,45 @@ func (e *ValidationError) Error() string {
 	return e.Field + ": " + e.Message
 }
 
+// Validator defines the interface for custom validators
 type Validator interface {
 	Validate(value interface{}) error
 }
 
+// ValidatorFunc is a function adapter for the Validator interface
 type ValidatorFunc func(value interface{}) error
 
+// Validate calls the validator function
 func (f ValidatorFunc) Validate(value interface{}) error {
 	return f(value)
 }
 
+// ValidationRule defines a single validation rule for a field
 type ValidationRule struct {
 	Name     string
 	Fn       ValidatorFunc
 	ErrorMsg string
 }
 
+// FieldValidator validates fields in map[string]interface{} data
 type FieldValidator struct {
 	rules map[string][]ValidationRule
 }
 
+// NewFieldValidator creates a new field validator
 func NewFieldValidator() *FieldValidator {
 	return &FieldValidator{
 		rules: make(map[string][]ValidationRule),
 	}
 }
 
+// AddRule adds a validation rule for a specific field
 func (v *FieldValidator) AddRule(field string, rule ValidationRule) *FieldValidator {
 	v.rules[field] = append(v.rules[field], rule)
 	return v
 }
 
+// Validate validates the data against all registered rules
 func (v *FieldValidator) Validate(data interface{}) map[string]*ValidationError {
 	errs := make(map[string]*ValidationError)
 	vv, ok := data.(map[string]interface{})
@@ -200,6 +228,7 @@ func (v *FieldValidator) Validate(data interface{}) map[string]*ValidationError 
 	return errs
 }
 
+// ValidateEmail validates an email address format
 func ValidateEmail(value interface{}) error {
 	str, ok := value.(string)
 	if !ok {
@@ -219,6 +248,7 @@ func ValidateEmail(value interface{}) error {
 	return nil
 }
 
+// ValidatePassword validates password strength (min 8 chars, upper, lower, digit)
 func ValidatePassword(value interface{}) error {
 	str, ok := value.(string)
 	if !ok {
@@ -247,6 +277,7 @@ func ValidatePassword(value interface{}) error {
 	return nil
 }
 
+// EmailValidator creates a validation rule for email fields
 func EmailValidator(errorMsg string) ValidationRule {
 	return ValidationRule{
 		Name:     "email",
@@ -255,6 +286,7 @@ func EmailValidator(errorMsg string) ValidationRule {
 	}
 }
 
+// PasswordValidator creates a validation rule for password fields
 func PasswordValidator(errorMsg string) ValidationRule {
 	return ValidationRule{
 		Name:     "password",

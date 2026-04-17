@@ -44,6 +44,7 @@ type PubSub interface {
 	Publish(ctx context.Context, channel string, message interface{}) *redis.IntCmd
 }
 
+// DistributedConfig holds configuration for the distributed cache
 type DistributedConfig struct {
 	Client     RedisClient
 	PubSub     PubSub
@@ -52,6 +53,7 @@ type DistributedConfig struct {
 	Channel    string
 }
 
+// DistributedCache provides cache with cross-instance invalidation via Redis pub/sub
 type DistributedCache struct {
 	local   *Cache
 	pubsub  PubSub
@@ -60,6 +62,7 @@ type DistributedCache struct {
 	subs    map[string]func(prefix string) error
 }
 
+// NewDistributedCache creates a new distributed cache with pub/sub invalidation
 func NewDistributedCache(config DistributedConfig) (*DistributedCache, error) {
 	local, err := NewWithPrefix(config.Client, config.DefaultTTL, config.KeyPrefix)
 	if err != nil {
@@ -81,6 +84,7 @@ func NewDistributedCache(config DistributedConfig) (*DistributedCache, error) {
 	return dc, nil
 }
 
+// SubscribeInvalidation registers a handler to be called when a prefix is invalidated
 func (d *DistributedCache) SubscribeInvalidation(ctx context.Context, prefix string, handler func(prefix string) error) error {
 	d.mu.Lock()
 	d.subs[prefix] = handler
@@ -89,6 +93,7 @@ func (d *DistributedCache) SubscribeInvalidation(ctx context.Context, prefix str
 	return nil
 }
 
+// StartListening begins listening for invalidation messages from other instances
 func (d *DistributedCache) StartListening(ctx context.Context) error {
 	if d.pubsub == nil {
 		return fmt.Errorf("pubsub not configured")
