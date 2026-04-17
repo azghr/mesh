@@ -111,6 +111,57 @@ cache.Delete(ctx, "user:123", "user:456")
 cache.InvalidateByPrefix(ctx, "user:")
 ```
 
+### Distributed Cache Invalidation
+
+For multi-instance deployments, cache invalidation should propagate across all instances. The distributed cache uses Redis pub/sub to broadcast invalidation events.
+
+```go
+// Create distributed cache
+dc, err := cache.NewDistributedCache(cache.DistributedConfig{
+    Client:    redisClient,
+    PubSub:   redisClient, // Redis client implements PubSub
+    DefaultTTL: 5 * time.Minute,
+    KeyPrefix: "myapp:",
+})
+
+// Start listening for invalidation events
+// Call this in your main() or app initialization
+if err := dc.StartListening(ctx); err != nil {
+    log.Fatal(err)
+}
+
+// Subscribe to specific prefix invalidation
+dc.SubscribeInvalidation(ctx, "user:", func(prefix string) error {
+    log.Printf("Invalidated prefix: %s", prefix)
+    return nil
+})
+```
+
+#### Invalidation Methods
+
+```go
+// Invalidate specific keys (broadcasts to all instances)
+dc.Invalidate(ctx, "user:123", "user:456")
+
+// Invalidate by prefix (broadcasts to all instances)
+dc.InvalidateByPrefix(ctx, "user:")
+```
+
+#### How It Works
+
+1. Instance A calls `dc.Invalidate(ctx, "user:123")`
+2. Instance A deletes the key from local Redis
+3. Instance A publishes invalidation message to Redis pub/sub
+4. Instance B receives message via subscription
+5. Instance B deletes "user:123" from its local cache
+6. Optional: Instance B's handler is notified
+
+#### Use Cases
+
+- **Multi-pod deployments**: All instances stay in sync when data changes
+- **Event-driven updates**: Subscribe to database changes and invalidate related cache
+- **Admin actions**: Clear all cache from a management endpoint
+
 ### Batch Operations
 
 ```go
