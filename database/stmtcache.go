@@ -45,11 +45,12 @@ import (
 
 // StmtCache provides prepared statement caching.
 type StmtCache struct {
-	db    *sql.DB
-	cache map[string]*sql.Stmt
-	mu    sync.RWMutex
-	stats StmtCacheStats
-	ttl   time.Duration
+	db            *sql.DB
+	cache         map[string]*sql.Stmt
+	mu            sync.RWMutex
+	stats         StmtCacheStats
+	ttl           time.Duration
+	maxStatements int
 }
 
 // StmtCacheStats tracks prepared statement cache statistics.
@@ -83,9 +84,10 @@ func NewStmtCache(db *sql.DB, cfg StmtCacheConfig) *StmtCache {
 	}
 
 	cache := &StmtCache{
-		db:    db,
-		cache: make(map[string]*sql.Stmt),
-		ttl:   cfg.TTL,
+		db:            db,
+		cache:         make(map[string]*sql.Stmt),
+		ttl:           cfg.TTL,
+		maxStatements: cfg.MaxStatements,
 	}
 
 	go cache.cleanupLoop()
@@ -120,7 +122,7 @@ func (c *StmtCache) Prepare(ctx context.Context, query string) (*sql.Stmt, error
 	}
 
 	// Evict if at capacity
-	if len(c.cache) >= 100 {
+	if len(c.cache) >= c.maxStatements {
 		c.evictOne()
 	}
 

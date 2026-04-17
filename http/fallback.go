@@ -203,43 +203,72 @@ func (c *FallbackClient) SetFallback(service string, fb FallbackResponse) {
 // Execute runs fn with circuit breaker protection and fallback support.
 // If the circuit is open, returns the fallback response instead of an error.
 func (c *FallbackClient) Execute(ctx context.Context, service string, fn func() (interface{}, error)) (interface{}, error) {
-	err := c.circuitBreaker.Execute(func() error {
-		_, err := fn()
-		return err
-	})
-
-	// If failed and circuit is open, try fallback
-	if err != nil {
-		if c.circuitBreaker.State() == StateOpen {
-			if fb, ok := c.fallbacks.Get(service); ok {
-				return c.serveFallback(ctx, service, fb)
-			}
+	// Check if circuit is open - return fallback immediately
+	if c.circuitBreaker.State() == StateOpen {
+		if fb, ok := c.fallbacks.Get(service); ok {
+			return c.serveFallback(ctx, service, fb)
 		}
-		return nil, err
+		// No fallback - return error indicating circuit is open
+		return nil, fmt.Errorf("circuit breaker is open for service: %s", service)
 	}
 
-	return fn()
-}
+	// Execute the function
+	result, err := fn()
 
-// ExecuteWithFallback runs fn and returns fallback on circuit open.
-// Unlike Execute, this never returns the circuit breaker error.
-func (c *FallbackClient) ExecuteWithFallback(ctx context.Context, service string, fn func() (interface{}, error)) (interface{}, error) {
-	err := c.circuitBreaker.Execute(func() error {
-		_, err := fn()
-		return err
-	})
+	// Record the result in circuit breaker
+	c.recordResult(err)
 
-	// Always try fallback on any error if circuit was open
-	if err != nil || c.circuitBreaker.State() == StateOpen {
+	// If error and circuit now open, try fallback
+	if err != nil && c.circuitBreaker.State() == StateOpen {
 		if fb, ok := c.fallbacks.Get(service); ok {
 			return c.serveFallback(ctx, service, fb)
 		}
 	}
 
+	return result, err
+}
+
+// recordResult records success/failure in the circuit breaker
+func (c *FallbackClient) recordResult(err error) {
 	if err != nil {
-		return nil, err
+		_ = c.circuitBreaker.Execute(func() error { return err })
+	} else {
+		_ = c.circuitBreaker.Execute(func() error { return nil })
 	}
-	return fn()
+}
+
+// ExecuteWithFallback runs fn and returns fallback on circuit open.
+// Unlike Execute, this never returns the circuit breaker error.
+func (c *FallbackClient) ExecuteWithFallback(ctx context.Context, service string, fn func() (interface{}, error)) (interface{}, error) {
+	// Check if circuit is open - return fallback immediately
+	if c.circuitBreaker.State() == StateOpen {
+		if fb, ok := c.fallbacks.Get(service); ok {
+			return c.serveFallback(ctx, service, fb)
+		}
+		// No fallback - suppress the error
+		return nil, nil
+	}
+
+	// Execute the function
+	result, err := fn()
+
+	// Record the result in circuit breaker
+	c.recordResult(err)
+
+	// If error and circuit now open, try fallback
+	if err != nil && c.circuitBreaker.State() == StateOpen {
+		if fb, ok := c.fallbacks.Get(service); ok {
+			return c.serveFallback(ctx, service, fb)
+		}
+		// No fallback - suppress the error
+		return nil, nil
+	}
+
+	// On any error, return nil (not the error) to caller
+	if err != nil {
+		return nil, nil
+	}
+	return result, nil
 }
 
 // serveFallback returns a cached fallback response.
