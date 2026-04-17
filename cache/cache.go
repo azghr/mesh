@@ -26,12 +26,12 @@ package cache
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
 	"time"
 
+	"github.com/azghr/mesh/json"
 	"github.com/redis/go-redis/v9"
 )
 
