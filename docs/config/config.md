@@ -31,6 +31,30 @@ func Load(path string, opts ...Options) (*Config, error)
 
 Loads config from YAML file, applies env overrides, then options.
 
+### LoadWithHotReload
+
+```go
+func LoadWithHotReload(filePath string, opts ...HotReloadOption) (*ConfigLoader, error)
+```
+
+Loads config with automatic hot reload support.
+
+```go
+// Load with hot reload
+cfg, err := config.LoadWithHotReload("config.yaml",
+    config.WithAutoReloadInterval(30*time.Second),
+    config.WithOnChange(func(newCfg *config.Config) {
+        log.Info("config reloaded", "environment", newCfg.Server.Environment)
+    }),
+)
+
+// Get latest config anytime
+current := cfg.Get()
+
+// Stop reload on shutdown
+cfg.Stop()
+```
+
 ### ValidateProduction
 
 ```go
