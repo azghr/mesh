@@ -20,9 +20,9 @@ pool := workerpool.New(
 )
 pool.Start()
 
-// Submit work
-pool.Submit(ctx, func() {
-    doWork()
+// Submit work (tasks receive context for cancellation)
+pool.Submit(ctx, func(ctx context.Context) {
+    doWork(ctx)
 })
 ```
 
@@ -73,8 +73,21 @@ workerpool.WithSize(8)
 // Size of task queue
 workerpool.WithQueueSize(200)
 
-// Task timeout (not yet implemented)
+// Task timeout (default for all tasks)
 workerpool.WithTaskTimeout(30*time.Second)
+```
+
+### Task Timeout
+
+```go
+// Pool-level timeout (applies to all tasks)
+pool := workerpool.New(workerpool.WithTaskTimeout(30 * time.Second))
+
+// Per-task timeout
+err := pool.SubmitWithTimeout(ctx, task, 10*time.Second)
+
+// Runtime timeout update
+pool.SetTaskTimeout(30 * time.Second)
 ```
 
 ## When to Use
