@@ -243,3 +243,55 @@ type DedupMetrics struct {
 ```
 
 The cache tracks hits, misses, sets, deletes, and errors automatically. Call `HitRate()` to get percentage of successful lookups.
+
+## Multi-Level Cache (L1/L2)
+
+Add L1 (in-memory) + L2 (Redis) caching for better performance:
+
+```go
+// Create multi-level cache
+ml := cache.NewMultiLevel(redisClient, cache.MultiLevelConfig{
+    L1TTL:      1*time.Minute,   // in-memory TTL
+    L2TTL:      1*time.Hour,    // Redis TTL
+    L1MaxSize:  10000,          // max entries in memory
+    SyncWrites: true,          // write both L1 and L2
+})
+```
+
+### How it works
+
+1. **Get**: Check L1 first (memory), then L2 (Redis), promote to L1 on hit
+2. **Set**: Write L1 always, L2 if SyncWrites enabled
+3. **Eviction**: LRU-style - remove expired first, then oldest if full
+
+### When to use
+
+- **High-frequency data**: User profiles, config, lookup tables
+- **Reduce Redis load**: L1 handles hot entries
+- **Multi-instance**: L2 persists across instances
+
+### Example
+
+```go
+// Cache-aside with multi-level
+val, err := ml.GetOrSet(ctx, "user:123", time.Hour, func() (any, error) {
+    return db.FindUser(ctx, "123")
+})
+// L1 hit: ~1μs (memory)
+// L2 hit: ~100μs (Redis)
+// Miss: fetch from DB, store in both
+```
+
+### Monitoring
+
+```go
+// Check cache sizes
+l1Size, l2Size := ml.Stats()
+log.Printf("L1: %d, L2: %d (Redis)", l1Size, l2Size)
+
+// Clear only memory cache (e.g., on memory pressure)
+ml.ClearL1()
+
+// Invalidate from both layers
+ml.Invalidate(ctx, "user:123")
+```
