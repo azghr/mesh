@@ -98,6 +98,54 @@ limiter := ratelimiter.NewRedisRateLimiter(client, 100, time.Minute,
     ratelimiter.WithKeyPrefix("myapp"))
 ```
 
+## Token Bucket Algorithm
+
+The token bucket algorithm allows bursts while enforcing an average rate:
+
+- **Burst**: Can handle sudden spikes up to bucket size
+- **Rate**: Refills tokens at this speed per second
+- **Use cases**: APIs with occasional bursts (file uploads, data imports)
+
+### TokenBucketLimiter
+
+```go
+// Token bucket: 100 requests/second, burst up to 10
+limiter := ratelimiter.NewTokenBucketLimiter(client, ratelimiter.TokenBucketConfig{
+    Rate:      100.0,  // tokens per second
+    Burst:     10,     // max bucket size
+    KeyPrefix: "ratelimit:",
+})
+
+allowed, err := limiter.Allow(ctx, "user:123")
+// - First 10 requests allowed (burst)
+// - Then limited to 100/second average
+```
+
+### When to Use Token Bucket
+
+| Scenario | Algorithm | Why |
+|----------|------------|-----|
+| API with bursts | Token Bucket | Handle spikes gracefully |
+| Consistent traffic | Sliding Window | Precise rate limiting |
+| Strict limits | Sliding Window | No burst tolerance |
+| File uploads | Token Bucket | Short bursts allowed |
+
+### Configuration
+
+```go
+// Burst-heavy workload (e.g., batch processing)
+limiter := ratelimiter.NewTokenBucketLimiter(client, TokenBucketConfig{
+    Rate:      50.0,
+    Burst:     100,   // large burst for batch jobs
+})
+
+// Tight limits (e.g., public API)
+limiter := ratelimiter.NewTokenBucketLimiter(client, TokenBucketConfig{
+    Rate:      10.0,
+    Burst:     1,     // no burst tolerance
+})
+```
+
 ## Interface
 
 ```go
