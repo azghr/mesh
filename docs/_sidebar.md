@@ -19,6 +19,7 @@
 - [health - Health Checks](config/health.md)
 - [circuitbreaker - CB Dashboard](config/circuitbreaker.md)
 - [middleware - gRPC Interceptors](config/middleware_grpc.md)
+- [websocket - WebSocket](config/websocket.md)
 
 # Middleware & Auth
 
