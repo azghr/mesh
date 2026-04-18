@@ -132,3 +132,112 @@ type Config struct {
     IdleTimeout  time.Duration // Idle connection timeout (default: 5m)
 }
 ```
+
+## Cluster Support
+
+Redis Cluster provides automatic sharding and high availability for production deployments.
+
+### Creating a Cluster Client
+
+```go
+cluster, err := redis.NewCluster(redis.ClusterConfig{
+    Addrs:    []string{
+        "localhost:7000",
+        "localhost:7001",
+        "localhost:7002",
+    },
+    PoolSize:     10,
+    MinIdleConns:  5,
+    Password:     "cluster-pass",
+    MaxRetries:    3,
+})
+if err != nil {
+    return err
+}
+defer cluster.Close()
+```
+
+### Cluster Configuration
+
+```go
+type ClusterConfig struct {
+    Addrs         []string       // Cluster node addresses
+    PoolSize     int           // Max connections per node (default: 10)
+    MinIdleConns int           // Min idle connections per node (default: 5)
+    Password    string        // Password for authentication
+    MaxRetries  int           // Maximum number of retries (default: 3)
+    DialTimeout time.Duration // Connection timeout (default: 5s)
+    ReadTimeout time.Duration // Read timeout (default: 3s)
+    WriteTimeout time.Duration // Write timeout (default: 3s)
+    PoolTimeout time.Duration // Pool connection timeout (default: 4s)
+}
+```
+
+### Cluster Operations
+
+```go
+// Same API as regular client
+err := cluster.Set(ctx, "key", "value", time.Hour)
+val, err := cluster.Get(ctx, "key")
+
+// Cluster-specific operations
+err := cluster.ForEachNode(ctx, func(ctx context.Context, node *redis.Client) error {
+    // Execute on each master node
+    return nil
+})
+
+slots, err := cluster.GetClusterSlots(ctx)
+```
+
+## Sentinel Support
+
+Redis Sentinel provides automatic failover for high availability.
+
+### Creating a Sentinel Client
+
+```go
+sentinel, err := redis.NewSentinel(redis.SentinelConfig{
+    MasterName:      "mymaster",
+    SentinelAddrs:   []string{
+        "localhost:26379",
+        "localhost:26380",
+    },
+    SentinelPassword: "sentinel-pass",
+    Password:       "master-pass",
+    PoolSize:       10,
+})
+if err != nil {
+    return err
+}
+defer sentinel.Close()
+```
+
+### Sentinel Configuration
+
+```go
+type SentinelConfig struct {
+    MasterName       string        // Master name to monitor
+    SentinelAddrs   []string     // Sentinel addresses
+    SentinelPassword string     // Sentinel password
+    Password       string       // Master password
+    DB             int          // Default DB (default: 0)
+    PoolSize       int          // Max connections (default: 10)
+    MinIdleConns   int          // Min idle connections (default: 5)
+    DialTimeout   time.Duration // Connection timeout (default: 5s)
+    ReadTimeout   time.Duration // Read timeout (default: 3s)
+    WriteTimeout time.Duration // Write timeout (default: 3s)
+    PoolTimeout   time.Duration // Pool connection timeout (default: 4s)
+}
+```
+
+### Sentinel Operations
+
+```go
+// Same API as regular client - automatically routes to master
+err := sentinel.Set(ctx, "key", "value", time.Hour)
+val, err := sentinel.Get(ctx, "key")
+
+// Get master info
+masterName := sentinel.GetMasterAddr(ctx)
+```
+```
