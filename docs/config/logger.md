@@ -123,3 +123,44 @@ ctx := logger.WithTraceID(ctx, "trace-123")
 // Get trace ID from context
 traceID := logger.GetTraceID(ctx)
 ```
+
+## Log Aggregation
+
+Ship logs to a central aggregation service:
+
+```go
+logger.SetAggregator(logger.AggregatorConfig{
+    Endpoint:     "https://logs.example.com/api/v1/logs",
+    BatchSize:    100,            // Max logs per batch
+    FlushInterval: 5*time.Second, // Flush interval
+    RetryConfig: logger.RetryConfig{
+        MaxRetries: 3,
+        Backoff:    time.Second,
+    },
+})
+```
+
+### How it works
+
+1. Logs are buffered locally
+2. On batch size (100) or interval (5s), flush to endpoint
+3. On failure, retry with exponential backoff
+4. On success, continue; on final failure, log error
+
+### Example
+
+```go
+// Setup
+log := logger.New("api", "info", false)
+logger.SetAggregator(logger.AggregatorConfig{
+    Endpoint:    "https://logs.example.com/api/v1/logs",
+    BatchSize:   100,
+    FlushInterval: 5 * time.Second,
+})
+
+// Logs are automatically shipped
+log.Info("request processed", "trace_id", traceID, "user_id", userID)
+
+// Shutdown - flush remaining logs
+logger.StopAggregation()
+```
