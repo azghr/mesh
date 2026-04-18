@@ -24,6 +24,9 @@
 # Middleware & Auth
 
 - [middleware - HTTP Middleware](config/middleware.md)
+- [middleware - gRPC Interceptors](config/middleware_grpc.md)
+- [websocket - WebSocket](config/websocket.md)
+- [graphql - GraphQL](config/graphql.md)
 - [auth - Authentication](config/auth.md)
 
 # Observability
