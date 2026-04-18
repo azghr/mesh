@@ -69,6 +69,84 @@ users, err := database.ScanRows(rows, func(r *sql.Rows) (User, error) {
 user, found, err := database.OptionalGet[row](row, &user)
 ```
 
+## Query Builder
+
+A fluent query builder for building SQL queries programmatically.
+
+### SELECT
+
+```go
+// Simple select
+rows, err := database.Select(db).
+    Columns("id", "name", "email").
+    From("users").
+    Exec(ctx)
+
+// With conditions
+users, err := database.Select(db).
+    Columns("id", "name").
+    From("users").
+    Where("active = $1", true).
+    Where("created_at > $2", "2024-01-01").
+    OrderBy("name").Desc().
+    Limit(20).
+    Offset(10)
+```
+
+### INSERT
+
+```go
+result, err := database.Insert(db, "users").
+    Set("name", "John").
+    Set("email", "john@example.com").
+    Set("created_at", time.Now()).
+    Exec(ctx)
+
+// With ON CONFLICT
+result, err := database.Insert(db, "users").
+    Set("email", "john@example.com").
+    OnConflictAdd("email").
+    DoNothing().
+    Exec(ctx)
+```
+
+### UPDATE
+
+```go
+result, err := database.Update(db, "users").
+    Set("name", "Jane").
+    Set("updated_at", time.Now()).
+    Where("id = $1", userID).
+    Exec(ctx)
+```
+
+### DELETE
+
+```go
+result, err := database.Delete(db, "users").
+    Where("id = $1", userID).
+    Exec(ctx)
+```
+
+### Use with Scanners
+
+```go
+// Build the query
+sb := database.Select(db).
+    Columns("id", "name", "email").
+    From("users").
+    Where("active = $1", true)
+
+// Execute and scan
+rows, err := sb.Exec(ctx)
+defer rows.Close()
+
+users, err := database.ScanRows(rows, func(r *sql.Rows) (User, error) {
+    var u User
+    return u, r.Scan(&u.ID, &u.Name, &u.Email)
+})
+```
+
 ## Pool Management
 
 ```go
