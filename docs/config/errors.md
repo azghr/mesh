@@ -115,3 +115,96 @@ err.LogError(logger)
 // Validation/NotFound/Warn -> Warn
 // Database/Internal/External -> Error
 ```
+
+## Error Aggregation
+
+Aggregate and monitor errors with automatic grouping and alerting.
+
+### Basic Usage
+
+```go
+import "github.com/azghr/mesh/errors"
+
+aggregator := errors.NewAggregator(
+    errors.WithMinOccurrences(10),
+    errors.WithWindow(5 * time.Minute),
+)
+
+// Record errors
+aggregator.Record(err)
+aggregator.Record(err)
+aggregator.Record(err)
+
+// Get aggregated results
+grouped := aggregator.GetGroupedErrors()
+for _, group := range grouped {
+    fmt.Printf("%s: %d occurrences\n", group.Type, group.Count)
+}
+```
+
+### Group by Custom Fields
+
+```go
+aggregator := errors.NewAggregator(
+    errors.WithGroupBy("type", "code", "message"),
+)
+```
+
+### Alerting
+
+```go
+alertTriggered := false
+aggregator := errors.NewAggregator(
+    errors.WithAlerts(true, func(group errors.ErrorGroup) {
+        alertTriggered = true
+       Notify("error threshold exceeded: " + string(group.Type))
+    }),
+)
+
+aggregator.EnableAlert(errors.GroupFilter{
+    ErrType:    errors.ErrorTypeDatabase,
+    Code:     "connection",
+    Threshold: 50,
+}, handleAlert)
+```
+
+### Full Example
+
+```go
+func main() {
+    aggregator := errors.NewAggregator(
+        errors.WithWindow(5 * time.Minute),
+        errors.WithMinOccurrences(10),
+        errors.WithAlerts(true, onErrorAlert),
+    )
+
+    http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+        user, err := db.FindUser(r.FormValue("id"))
+        if err != nil {
+            aggregator.Record(err)
+            w.WriteHeader(500)
+            return
+        }
+        json.NewEncoder(w).Encode(user)
+    })
+}
+
+func onErrorAlert(group errors.ErrorGroup) {
+    log.Printf("ALERT: %s errors exceeded threshold: %d",
+        group.Type, group.Count)
+}
+```
+
+### API
+
+| Method | Description |
+|-------|-------------|
+| `NewAggregator(opts...)` | Create new aggregator |
+| `Record(err)` | Record an error |
+| `GetGroupedErrors()` | Get all error groups |
+| `GetErrorCount(type)` | Count errors by type |
+| `GetErrorCountByCode(code)` | Count by code |
+| `GetTopErrors(n)` | Get top n errors |
+| `EnableAlert(filter, handler)` | Enable alerting |
+| `Stats()` | Get statistics |
+| `Reset()` | Clear all errors |
