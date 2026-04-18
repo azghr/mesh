@@ -94,6 +94,35 @@ cache, _ := cache.NewWithPrefix(redisClient, 5*time.Minute, "myapp:")
 ## Configuration
 
 ```go
+// Configuration for new cache
+cache, err := cache.NewWithConfig(redisClient, cache.Config{
+    DefaultTTL:      5*time.Minute,
+    KeyPrefix:       "cache:",
+    StampedeEnabled: true,         // Enable stampede protection
+    StampedeTTL:     100*time.Millisecond,  // Lock timeout
+    StampedeRetries: 3,            // Max lock acquisition retries
+})
+```
+
+### Stampede Protection
+
+When multiple requests hit a cache miss for the same key simultaneously, only one request fetches the data while others wait:
+
+```go
+cache, _ := cache.NewWithConfig(redisClient, cache.Config{
+    StampedeEnabled: true,
+    StampedeTTL:     100*time.Millisecond,
+})
+
+// Request 1: cache miss, acquires lock, fetches from DB
+// Request 2: cache miss, lock exists, waits for result
+// Request 3: cache miss, lock exists, waits for result
+// ... once Request 1 completes, all get the cached result
+```
+
+### Metrics
+
+```go
 type Metrics struct {
     Hits    int64 // Cache hits
     Misses  int64 // Cache misses

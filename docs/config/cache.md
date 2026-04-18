@@ -200,6 +200,34 @@ This "cache stampede" can overwhelm your database. With dedup:
 ## Configuration
 
 ```go
+// Create cache with stampede protection enabled
+cache, err := cache.NewWithConfig(redisClient, cache.Config{
+    DefaultTTL:      5*time.Minute,
+    KeyPrefix:       "cache:",
+    StampedeEnabled: true,         // Enable stampede protection
+    StampedeTTL:     100*time.Millisecond,  // Lock timeout
+    StampedeRetries: 3,            // Max lock acquisition retries
+})
+```
+
+### How Stampede Protection Works
+
+When enabled, `GetOrSet` uses distributed locking:
+
+1. **Cache miss detected** → Try to acquire lock (`key:lock`)
+2. **Lock acquired** → Execute fetch function, cache result, release lock
+3. **Lock not acquired** → Poll cache until result is available (wait for other request)
+
+```go
+// Request 1: cache miss, acquires lock, fetches from DB
+// Request 2: cache miss, lock exists, waits for result  
+// Request 3: cache miss, lock exists, waits for result
+// ... once Request 1 completes, all get the cached result
+```
+
+This prevents the "thundering herd" problem where many concurrent requests all hit the database.
+
+```go
 type Metrics struct {
     Hits    int64 // Cache hits
     Misses  int64 // Cache misses

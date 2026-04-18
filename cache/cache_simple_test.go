@@ -60,6 +60,14 @@ func (m *mockRedisClient) Pipeline() redis.Pipeliner {
 	return m.client.Pipeline()
 }
 
+func (m *mockRedisClient) SetNX(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.BoolCmd {
+	return m.client.SetNX(ctx, key, value, expiration)
+}
+
+func (m *mockRedisClient) Eval(ctx context.Context, script string, keys []string, args ...interface{}) *redis.Cmd {
+	return m.client.Eval(ctx, script, keys, args...)
+}
+
 func (m *mockRedisClient) Close() error {
 	m.server.Close()
 	return m.client.Close()

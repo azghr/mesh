@@ -18,6 +18,21 @@
 // - MultiGet/MultiSet: batch operations for performance
 // - InvalidateByPrefix: clear all keys matching a prefix
 //
+// # Stampede Protection
+//
+// When enabled, cache.GetOrSet uses distributed locking to prevent
+// cache stampedes. When multiple requests hit a cache miss for the
+// same key, only one request fetches the data; others wait for the result.
+//
+// Enable via Config when creating a cache:
+//
+//	cache, _ := cache.New(redisClient, cache.Config{
+//	    DefaultTTL:      5*time.Minute,
+//	    StampedeEnabled: true,
+//	    StampedeTTL:     100*time.Millisecond,
+//	    StampedeRetries: 3,
+//	})
+//
 // # Metrics
 //
 // The cache tracks hits, misses, sets, deletes, and errors automatically.
@@ -44,6 +59,26 @@ var (
 	ErrRedisRequired = errors.New("redis client is required")
 )
 
+// Config holds the configuration for the cache
+type Config struct {
+	DefaultTTL      time.Duration // Default TTL for cache entries
+	KeyPrefix       string        // Prefix for all cache keys
+	StampedeEnabled bool          // Enable stampede protection
+	StampedeTTL     time.Duration // Lock TTL for stampede protection
+	StampedeRetries int           // Max retries for acquiring stampede lock
+}
+
+// DefaultConfig returns a cache configuration with sensible defaults
+func DefaultConfig() Config {
+	return Config{
+		DefaultTTL:      5 * time.Minute,
+		KeyPrefix:       "cache:",
+		StampedeEnabled: false,
+		StampedeTTL:     100 * time.Millisecond,
+		StampedeRetries: 3,
+	}
+}
+
 // Cache provides caching functionality with Redis backend
 type Cache struct {
 	client     RedisClient
@@ -51,6 +86,14 @@ type Cache struct {
 	keyPrefix  string
 	metrics    *Metrics
 	mu         sync.Mutex
+	stampede   *stampedeConfig
+}
+
+// stampedeConfig holds stampede protection configuration
+type stampedeConfig struct {
+	enabled bool
+	ttl     time.Duration
+	retries int
 }
 
 // RedisClient interface defines the required Redis methods for caching
@@ -64,6 +107,8 @@ type RedisClient interface {
 	Keys(ctx context.Context, pattern string) *redis.StringSliceCmd
 	Scan(ctx context.Context, cursor uint64, match string, count int64) *redis.ScanCmd
 	Pipeline() redis.Pipeliner
+	SetNX(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.BoolCmd
+	Eval(ctx context.Context, script string, keys []string, args ...interface{}) *redis.Cmd
 }
 
 // Metrics tracks cache performance
@@ -75,21 +120,50 @@ type Metrics struct {
 	Errors  int64
 }
 
+// StampedeMetrics tracks stampede protection statistics
+type StampedeMetrics struct {
+	LockAcquired int64 // Times this instance acquired the lock
+	LockWaited   int64 // Times this instance waited for another request
+	LockFailed   int64 // Times lock acquisition failed (fallback)
+}
+
 // New creates a new cache with the given Redis client
 func New(client RedisClient, defaultTTL time.Duration) (*Cache, error) {
+	return NewWithConfig(client, Config{
+		DefaultTTL: defaultTTL,
+		KeyPrefix:  "cache:",
+	})
+}
+
+// NewWithConfig creates a new cache with explicit configuration
+func NewWithConfig(client RedisClient, cfg Config) (*Cache, error) {
 	if client == nil {
 		return nil, ErrRedisRequired
 	}
 
-	if defaultTTL <= 0 {
-		defaultTTL = 5 * time.Minute
+	if cfg.DefaultTTL <= 0 {
+		cfg.DefaultTTL = 5 * time.Minute
+	}
+	if cfg.KeyPrefix == "" {
+		cfg.KeyPrefix = "cache:"
+	}
+	if cfg.StampedeTTL <= 0 {
+		cfg.StampedeTTL = 100 * time.Millisecond
+	}
+	if cfg.StampedeRetries <= 0 {
+		cfg.StampedeRetries = 3
 	}
 
 	return &Cache{
 		client:     client,
-		defaultTTL: defaultTTL,
-		keyPrefix:  "cache:",
+		defaultTTL: cfg.DefaultTTL,
+		keyPrefix:  cfg.KeyPrefix,
 		metrics:    &Metrics{},
+		stampede: &stampedeConfig{
+			enabled: cfg.StampedeEnabled,
+			ttl:     cfg.StampedeTTL,
+			retries: cfg.StampedeRetries,
+		},
 	}, nil
 }
 
@@ -225,7 +299,9 @@ func (c *Cache) Exists(ctx context.Context, key string) (bool, error) {
 	return count > 0, nil
 }
 
-// GetOrSet retrieves a value from cache or computes and caches it
+// GetOrSet retrieves a value from cache or computes and caches it.
+// If stampede protection is enabled, uses distributed locking to prevent
+// multiple concurrent requests from computing the same key.
 func (c *Cache) GetOrSet(ctx context.Context, key string, dest interface{}, ttl time.Duration, fn func() (interface{}, error)) error {
 	// Try to get from cache
 	err := c.Get(ctx, key, dest)
@@ -237,7 +313,116 @@ func (c *Cache) GetOrSet(ctx context.Context, key string, dest interface{}, ttl 
 		return err // Real error
 	}
 
-	// Cache miss - compute value
+	// Cache miss - check if stampede protection is enabled
+	if c.stampede.enabled {
+		return c.getOrSetWithStampede(ctx, key, dest, ttl, fn)
+	}
+
+	// Stampede protection disabled - original behavior
+	value, err := fn()
+	if err != nil {
+		return err
+	}
+
+	// Store in cache (don't fail the request if caching fails)
+	if cacheErr := c.Set(ctx, key, value, ttl); cacheErr != nil {
+		c.incErrors()
+	}
+
+	// Set dest value
+	data, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+
+	return json.Unmarshal(data, dest)
+}
+
+// getOrSetWithStampede implements stampede protection using distributed locking
+func (c *Cache) getOrSetWithStampede(ctx context.Context, key string, dest interface{}, ttl time.Duration, fn func() (interface{}, error)) error {
+	cacheKey := c.formatKey(key)
+	lockKey := cacheKey + ":lock"
+
+	// Try to acquire lock
+	locked, err := c.acquireStampedeLock(ctx, lockKey)
+	if err != nil {
+		// Lock acquisition failed - proceed without protection
+		return c.getOrSetWithoutLock(ctx, key, dest, ttl, fn)
+	}
+
+	if locked {
+		// We got the lock - compute and cache
+		defer c.releaseStampedeLock(ctx, lockKey)
+		return c.getOrSetWithoutLock(ctx, key, dest, ttl, fn)
+	}
+
+	// Lock not acquired - another request is computing
+	// Wait for the result by polling the cache
+	return c.waitForStampedeResult(ctx, key, dest, ttl)
+}
+
+// acquireStampedeLock tries to acquire a distributed lock for stampede protection
+func (c *Cache) acquireStampedeLock(ctx context.Context, lockKey string) (bool, error) {
+	// Lua script for atomic lock acquisition
+	// Returns 1 if lock acquired, 0 if not
+	script := `
+		if redis.call('set', KEYS[1], '1', 'nx', 'ex', ARGV[1]) then
+			return 1
+		else
+			return 0
+		end
+	`
+
+	for i := 0; i < c.stampede.retries; i++ {
+		result, err := c.client.Eval(ctx, script, []string{lockKey}, int(c.stampede.ttl.Seconds())).Int()
+		if err != nil {
+			return false, err
+		}
+		if result == 1 {
+			return true, nil
+		}
+		// Wait a bit before retry
+		time.Sleep(c.stampede.ttl)
+	}
+	return false, nil
+}
+
+// releaseStampedeLock releases the distributed lock
+func (c *Cache) releaseStampedeLock(ctx context.Context, lockKey string) error {
+	script := `
+		if redis.call('get', KEYS[1]) == '1' then
+			return redis.call('del', KEYS[1])
+		else
+			return 0
+		end
+	`
+	_, err := c.client.Eval(ctx, script, []string{lockKey}).Int()
+	return err
+}
+
+// waitForStampedeResult waits for another request to complete the computation
+func (c *Cache) waitForStampedeResult(ctx context.Context, key string, dest interface{}, ttl time.Duration) error {
+	maxWait := 10 * time.Second
+	pollInterval := 50 * time.Millisecond
+	start := time.Now()
+
+	for time.Since(start) < maxWait {
+		err := c.Get(ctx, key, dest)
+		if err == nil {
+			return nil // Result is available
+		}
+		if err != ErrCacheMiss {
+			return err
+		}
+		time.Sleep(pollInterval)
+	}
+
+	// Timeout - compute ourselves
+	return ErrCacheMiss
+}
+
+// getOrSetWithoutLock performs the actual computation and caching
+func (c *Cache) getOrSetWithoutLock(ctx context.Context, key string, dest interface{}, ttl time.Duration, fn func() (interface{}, error)) error {
 	value, err := fn()
 	if err != nil {
 		return err
