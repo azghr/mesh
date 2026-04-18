@@ -268,6 +268,74 @@ validation.SetMaxBodySize(2 << 20) // 2MB
 app.Use(validation.ValidateRequest())
 ```
 
+## CORS Middleware
+
+Cross-Origin Resource Sharing (CORS) middleware for handling cross-origin requests from browsers.
+
+### Basic Usage
+
+```go
+// Allow all origins (default)
+app.Use(middleware.CORS())
+```
+
+### Restricted Origins
+
+```go
+// Allow specific origins only
+app.Use(middleware.CORS(
+    middleware.WithAllowedOrigins("https://example.com"),
+))
+```
+
+### With Credentials
+
+When allowing credentials, origins must be specific (no wildcards):
+
+```go
+app.Use(middleware.CORS(
+    middleware.WithAllowedOrigins("https://app.example.com"),
+    middleware.WithAllowCredentials(true),
+))
+```
+
+### Full Configuration
+
+```go
+import "time"
+
+app.Use(middleware.CORS(
+    middleware.WithAllowedOrigins("https://example.com", "https://api.example.com"),
+    middleware.WithAllowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS"),
+    middleware.WithAllowedHeaders("Content-Type", "Authorization", "X-Client-Version"),
+    middleware.WithExposedHeaders("X-Request-ID"),
+    middleware.WithAllowCredentials(true),
+    middleware.WithMaxAge(1*time.Hour),
+))
+```
+
+### Custom Origin Validation
+
+```go
+// Custom function for complex origin validation
+app.Use(middleware.CORS(
+    middleware.WithAllowOriginFunc(func(origin string) bool {
+        return strings.Contains(origin, "example.com")
+    }),
+))
+```
+
+### Response Headers
+
+| Header | Description |
+|--------|-------------|
+| `Access-Control-Allow-Origin` | Origin allowed to access the resource |
+| `Access-Control-Allow-Methods` | HTTP methods allowed |
+| `Access-Control-Allow-Headers` | Request headers allowed |
+| `Access-Control-Expose-Headers` | Response headers accessible to client |
+| `Access-Control-Allow-Credentials` | Whether credentials are allowed |
+| `Access-Control-Max-Age` | Preflight cache duration in seconds |
+
 ## All Middleware Available
 
 | Middleware | Purpose |
@@ -278,3 +346,4 @@ app.Use(validation.ValidateRequest())
 | `Correlation` | Request ID tracking |
 | `SecurityHeaders` | Add security headers |
 | `Validation` | Request body validation |
+| `CORS` | Cross-Origin Resource Sharing |

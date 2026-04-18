@@ -87,6 +87,45 @@ app.Post("/users", middleware.Validate(userSchema), handler)
 // Returns 400 if validation fails
 ```
 
+## CORS Middleware
+
+Cross-Origin Resource Sharing (CORS) middleware for handling cross-origin requests.
+
+```go
+// Basic - allow all origins (default)
+app.Use(middleware.CORS())
+
+// Restricted origins
+app.Use(middleware.CORS(
+    middleware.WithAllowedOrigins("https://example.com"),
+))
+
+// With credentials (requires specific origin, no wildcard)
+app.Use(middleware.CORS(
+    middleware.WithAllowedOrigins("https://app.example.com"),
+    middleware.WithAllowCredentials(true),
+    middleware.WithAllowedMethods("GET", "POST", "PUT", "DELETE"),
+    middleware.WithAllowedHeaders("Content-Type", "Authorization"),
+    middleware.WithExposedHeaders("X-Request-ID"),
+    middleware.WithMaxAge(1*time.Hour),
+))
+
+// Custom origin validation
+app.Use(middleware.CORS(
+    middleware.WithAllowOriginFunc(func(origin string) bool {
+        return strings.Contains(origin, "example.com")
+    }),
+))
+```
+
+Response headers added:
+- `Access-Control-Allow-Origin` - Origin allowed to access the resource
+- `Access-Control-Allow-Methods` - HTTP methods allowed
+- `Access-Control-Allow-Headers` - Request headers allowed
+- `Access-Control-Expose-Headers` - Response headers accessible to client
+- `Access-Control-Allow-Credentials` - Whether credentials are allowed
+- `Access-Control-Max-Age` - Preflight cache duration
+
 ## All Middleware Available
 
 | Middleware | Purpose |
@@ -97,3 +136,4 @@ app.Post("/users", middleware.Validate(userSchema), handler)
 | `Correlation` | Request ID tracking |
 | `SecurityHeaders` | Add security headers |
 | `Validation` | Request body validation |
+| `CORS` | Cross-Origin Resource Sharing |
