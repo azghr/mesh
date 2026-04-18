@@ -11,9 +11,24 @@
 //
 //	result := result.Err[int](errors.New("failed"))
 //	value := result.UnwrapOr(0)
+//
+// Async operations for concurrent execution:
+//
+//	result := result.Async(func() (User, error) {
+//	    return findUser(ctx, id)
+//	})
+//
+//	// Non-blocking - check status
+//	if result.IsReady() {
+//	    user, err := result.Get()
+//	}
 package result
 
-import "errors"
+import (
+	"context"
+	"errors"
+	"sync"
+)
 
 // Result represents either a success value or an error
 type Result[T any] struct {
@@ -144,4 +159,93 @@ func (r Result[T]) Is(target error) bool {
 		return target == nil
 	}
 	return errors.Is(r.err, target)
+}
+
+// AsyncResult represents an asynchronously executing operation.
+type AsyncResult[T any] struct {
+	result Result[T]
+	mu     sync.RWMutex
+	ready  chan struct{}
+}
+
+// Async starts a function asynchronously.
+func Async[T any](fn func() (T, error)) *AsyncResult[T] {
+	a := &AsyncResult[T]{
+		ready: make(chan struct{}),
+	}
+
+	go func() {
+		value, err := fn()
+		a.mu.Lock()
+		a.result = Result[T]{value: value, err: err}
+		a.mu.Unlock()
+		close(a.ready)
+	}()
+
+	return a
+}
+
+// IsReady returns true if the async operation has completed.
+func (a *AsyncResult[T]) IsReady() bool {
+	select {
+	case <-a.ready:
+		return true
+	default:
+		return false
+	}
+}
+
+// Get blocks until the result is available and returns it.
+func (a *AsyncResult[T]) Get() (T, error) {
+	<-a.ready
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.result.value, a.result.err
+}
+
+// GetWithTimeout blocks until the result is available or context times out.
+func (a *AsyncResult[T]) GetWithTimeout(ctx context.Context) (T, error) {
+	select {
+	case <-a.ready:
+		a.mu.RLock()
+		defer a.mu.RUnlock()
+		return a.result.value, a.result.err
+	case <-ctx.Done():
+		var zero T
+		return zero, ctx.Err()
+	}
+}
+
+// AsyncAll runs multiple async operations concurrently and collects results.
+func AsyncAll[T any](fns ...func() (T, error)) []*AsyncResult[T] {
+	results := make([]*AsyncResult[T], len(fns))
+	for i, fn := range fns {
+		results[i] = Async(fn)
+	}
+	return results
+}
+
+// Collect waits for all async results and returns them.
+func Collect[T any](ctx context.Context, results []*AsyncResult[T]) ([]Result[T], error) {
+	out := make([]Result[T], len(results))
+
+	for i, r := range results {
+		value, err := r.GetWithTimeout(ctx)
+		out[i] = Result[T]{value: value, err: err}
+	}
+
+	// Check for any errors
+	for _, r := range out {
+		if r.err != nil {
+			return out, r.err
+		}
+	}
+	return out, nil
+}
+
+// WaitForAll waits for all async results (non-returning version).
+func WaitForAll[T any](results []*AsyncResult[T]) {
+	for _, r := range results {
+		r.Get()
+	}
 }
