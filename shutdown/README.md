@@ -125,6 +125,46 @@ func main() {
 }
 ```
 
+## Graceful HTTP Server Shutdown
+
+```go
+// HTTP server shutdown with draining active connections
+server := &http.Server{
+    Addr:    ":8080",
+    Handler: router,
+}
+
+go func() {
+    if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+        log.Fatal(err)
+    }
+}()
+
+// On shutdown signal
+trap := make(chan os.Signal, 1)
+signal.Notify(trap, os.Interrupt, syscall.SIGTERM)
+<-trap
+
+err := shutdown.GracefulHTTP(server, shutdown.Config{
+    Timeout: 30 * time.Second,
+    ShutdownHooks: []shutdown.Hook{
+        func(ctx context.Context) error { return db.Close() },
+        func(ctx context.Context) error { return redis.Close() },
+    },
+})
+```
+
+### Configuration
+
+```go
+// Config options
+shutdown.Config{
+    Timeout: 30 * time.Second,           // drain timeout
+    PreShutdownHooks: []Hook{...},        // before server.Stop
+    ShutdownHooks: []Hook{...},           // after server.Stop
+}
+```
+
 ## Errors
 
 ```go

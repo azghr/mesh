@@ -15,12 +15,22 @@
 //
 //	// On shutdown signal
 //	mgr.Shutdown(context.Background())
+//
+// Graceful HTTP server shutdown:
+//
+//	err := shutdown.GracefulHTTP(server, shutdown.Config{
+//	    Timeout: 30*time.Second,
+//	    ShutdownHooks: []shutdown.Hook{
+//	        func(ctx context.Context) error { return db.Close() },
+//	    },
+//	})
 package shutdown
 
 import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"sync"
@@ -33,6 +43,19 @@ var ErrShutdownTimeout = fmt.Errorf("shutdown timed out")
 
 // ErrShutdownCancelled indicates shutdown was cancelled via context
 var ErrShutdownCancelled = fmt.Errorf("shutdown was cancelled")
+
+// Hook is a function called during graceful shutdown.
+type Hook func(ctx context.Context) error
+
+// Config holds configuration for GracefulHTTP.
+type Config struct {
+	// Timeout for draining active connections (default: 30s)
+	Timeout time.Duration
+	// ShutdownHooks are called after server stops accepting connections
+	ShutdownHooks []Hook
+	// PreShutdownHooks are called before stopping the server
+	PreShutdownHooks []Hook
+}
 
 // Task represents a shutdown task
 type Task struct {
@@ -320,4 +343,72 @@ func (m *Manager) Tasks() []string {
 		names = append(names, name)
 	}
 	return names
+}
+
+// GracefulHTTP performs graceful shutdown of an HTTP server.
+//
+// It stops accepting new connections, waits for active requests to complete,
+// then runs shutdown hooks.
+//
+// Example:
+//
+//	err := shutdown.GracefulHTTP(server, shutdown.Config{
+//	    Timeout: 30*time.Second,
+//	    ShutdownHooks: []shutdown.Hook{
+//	        func(ctx context.Context) error { return db.Close() },
+//	    },
+//	})
+func GracefulHTTP(srv *http.Server, cfg Config) error {
+	// Set default timeout
+	if cfg.Timeout == 0 {
+		cfg.Timeout = 30 * time.Second
+	}
+
+	// Run pre-shutdown hooks first
+	for _, hook := range cfg.PreShutdownHooks {
+		if err := hook(context.Background()); err != nil {
+			log.Printf("[shutdown] pre-hook error: %v", err)
+		}
+	}
+
+	// Stop accepting new connections
+	srv.SetKeepAlivesEnabled(false)
+
+	// Close the listener to unblock Serve()
+	ln := srv.Addr
+	if ln == "" {
+		ln = ":http"
+	}
+
+	// Create shutdown context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), cfg.Timeout)
+	defer cancel()
+
+	// Channel for server error
+	done := make(chan error, 1)
+
+	go func() {
+		done <- srv.Shutdown(ctx)
+	}()
+
+	// Wait for either shutdown complete or timeout
+	select {
+	case <-ctx.Done():
+		cancel()
+		return ErrShutdownTimeout
+	case err := <-done:
+		if err != nil {
+			log.Printf("[shutdown] HTTP server: %v", err)
+		}
+	}
+
+	// Run shutdown hooks
+	for _, hook := range cfg.ShutdownHooks {
+		if err := hook(ctx); err != nil {
+			log.Printf("[shutdown] hook error: %v", err)
+			return err
+		}
+	}
+
+	return nil
 }
