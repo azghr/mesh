@@ -18,6 +18,7 @@
 - [redis - Redis Client](config/redis.md)
 - [health - Health Checks](config/health.md)
 - [circuitbreaker - CB Dashboard](config/circuitbreaker.md)
+- [middleware - gRPC Interceptors](config/middleware_grpc.md)
 
 # Middleware & Auth
 
