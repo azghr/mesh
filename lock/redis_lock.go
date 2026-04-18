@@ -10,6 +10,18 @@
 //	    // Critical section - only one instance will execute this
 //	    return doWork()
 //	})
+//
+// Metrics support:
+//
+//	lock := lock.NewRedisLock(redisClient, lock.WithMetrics(lock.MetricsConfig{
+//	    EnableWaitTime:   true,
+//	    EnableContention: true,
+//	}))
+//
+// Metrics exported:
+//   - mesh_lock_acquired_total{key,owner} - locks acquired
+//   - mesh_lock_wait_seconds{key,owner} - wait time to acquire
+//   - mesh_lock_contention_total{key,owner} - contention events
 package lock
 
 import (
@@ -19,6 +31,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -33,6 +47,78 @@ var (
 	ErrInvalidLockDuration = errors.New("lock duration must be positive")
 )
 
+var (
+	lockAcquiredTotal   *prometheus.CounterVec
+	lockWaitSeconds     *prometheus.HistogramVec
+	lockContentionTotal *prometheus.CounterVec
+	metricsRegistry     sync.Once
+)
+
+type metricsConfig struct {
+	EnableWaitTime   bool
+	EnableContention bool
+}
+
+// MetricsConfig holds configuration for lock metrics.
+type MetricsConfig struct {
+	// EnableWaitTime tracks time waited to acquire locks
+	EnableWaitTime bool
+	// EnableContention tracks contention events
+	EnableContention bool
+}
+
+// initMetrics initializes Prometheus metrics
+func initMetrics(cfg *metricsConfig) {
+	if cfg == nil {
+		return
+	}
+
+	metricsRegistry.Do(func() {
+		lockAcquiredTotal = promauto.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "mesh_lock_acquired_total",
+				Help: "Total number of locks acquired",
+			},
+			[]string{"key", "owner"},
+		)
+
+		if cfg.EnableWaitTime {
+			lockWaitSeconds = promauto.NewHistogramVec(
+				prometheus.HistogramOpts{
+					Name:    "mesh_lock_wait_seconds",
+					Help:    "Time waited to acquire lock in seconds",
+					Buckets: []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1},
+				},
+				[]string{"key", "owner"},
+			)
+		}
+
+		if cfg.EnableContention {
+			lockContentionTotal = promauto.NewCounterVec(
+				prometheus.CounterOpts{
+					Name: "mesh_lock_contention_total",
+					Help: "Total number of lock contention events",
+				},
+				[]string{"key", "owner"},
+			)
+		}
+	})
+}
+
+// recordWaitTime records lock wait time
+func recordWaitTime(key, owner string, duration time.Duration) {
+	if lockWaitSeconds != nil {
+		lockWaitSeconds.WithLabelValues(key, owner).Observe(duration.Seconds())
+	}
+}
+
+// recordContention records a contention event
+func recordContention(key, owner string) {
+	if lockContentionTotal != nil {
+		lockContentionTotal.WithLabelValues(key, owner).Inc()
+	}
+}
+
 // RedisClient interface defines the required Redis methods for locking
 type RedisClient interface {
 	SetNX(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.BoolCmd
@@ -42,14 +128,35 @@ type RedisClient interface {
 
 // RedisLock implements distributed locking using Redis
 type RedisLock struct {
-	client RedisClient
+	client  RedisClient
+	metrics *MetricsConfig
+}
+
+// Option configures RedisLock
+type Option func(*RedisLock)
+
+// WithMetrics enables metrics collection
+func WithMetrics(cfg MetricsConfig) Option {
+	return func(l *RedisLock) {
+		initMetrics(&metricsConfig{
+			EnableWaitTime:   cfg.EnableWaitTime,
+			EnableContention: cfg.EnableContention,
+		})
+		l.metrics = &cfg
+	}
 }
 
 // NewRedisLock creates a new Redis-based lock manager
-func NewRedisLock(client RedisClient) *RedisLock {
-	return &RedisLock{
+func NewRedisLock(client RedisClient, opts ...Option) *RedisLock {
+	l := &RedisLock{
 		client: client,
 	}
+
+	for _, opt := range opts {
+		opt(l)
+	}
+
+	return l
 }
 
 // LockResult contains information about a lock operation
@@ -96,6 +203,7 @@ func (r *RedisLock) Acquire(ctx context.Context, key string, ttl time.Duration, 
 
 	var lastErr error
 	startTime := time.Now()
+	attempts := 0
 
 	for {
 		// Try to acquire the lock
@@ -104,7 +212,23 @@ func (r *RedisLock) Acquire(ctx context.Context, key string, ttl time.Duration, 
 			lastErr = err
 		} else if result.Acquired {
 			result.WaitTime = time.Since(startTime)
+
+			// Record metrics
+			if lockAcquiredTotal != nil {
+				lockAcquiredTotal.WithLabelValues(key, result.LockID).Inc()
+			}
+			if r.metrics != nil && r.metrics.EnableWaitTime && result.WaitTime > 0 {
+				recordWaitTime(key, result.LockID, result.WaitTime)
+			}
+
 			return result, nil
+		}
+
+		attempts++
+
+		// Record contention on retry
+		if attempts > 1 && r.metrics != nil && r.metrics.EnableContention {
+			recordContention(key, result.LockID)
 		}
 
 		// Check if we've exceeded the deadline

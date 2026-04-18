@@ -101,6 +101,21 @@ memLock.TryAcquire(ctx, "resource", time.Second)
 // Doesn't support same features as Redis lock
 ```
 
+## Metrics
+
+```go
+// Enable metrics collection
+lock := lock.NewRedisLock(redisClient, lock.WithMetrics(lock.MetricsConfig{
+    EnableWaitTime:   true,   // track wait time histogram
+    EnableContention: true,   // track contention events
+}))
+
+// When lock is acquired:
+// mesh_lock_acquired_total{key="resource",owner="12345"} 1
+// mesh_lock_wait_seconds{key="resource",owner="12345"} 0.234
+// mesh_lock_contention_total{key="resource",owner="12345"} 3
+```
+
 ## Error Handling
 
 ```go
