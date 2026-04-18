@@ -204,4 +204,60 @@ func setupRateLimiting() (*middleware.LimitMiddleware, error) {
 
     return mw, nil
 }
+
+## Adaptive Rate Limiter
+
+Rate limiter that automatically adjusts based on latency.
+
+### Basic Usage
+
+```go
+import "github.com/azghr/mesh/ratelimiter"
+
+limiter := ratelimiter.NewAdaptiveLimiter(redisClient,
+    ratelimiter.WithBaseRate(1000),      // Start at 1000 rps
+    ratelimiter.WithMinRate(100),         // Minimum 100 rps
+    ratelimiter.WithMaxRate(10000),       // Maximum 10000 rps
+    ratelimiter.WithTargetLatency(100*time.Millisecond),
+    ratelimiter.WithAdjustmentStep(100),   // Adjust by 100 each time
+)
+
+// Record latency after each request
+start := time.Now()
+resp, _ := client.Do(req)
+latency := time.Since(start)
+limiter.RecordLatency(ctx, "api", latency)
+
+// Check allowed
+allowed, err := limiter.Allow(ctx, "api")
+```
+
+### How It Works
+
+1. Starts at BaseRate
+2. Monitors average latency
+3. Increases rate if latency < TargetLatency
+4. Decreases rate if latency > TargetLatency
+5. Clamps to MinRate/MaxRate
+
+### Options
+
+| Option | Description | Default |
+|-------|-------------|---------|
+| `WithBaseRate` | Starting rate | 1000 |
+| `WithMinRate` | Minimum rate | 100 |
+| `WithMaxRate` | Maximum rate | 10000 |
+| `WithTargetLatency` | Target latency | 100ms |
+| `WithAdjustmentStep` | Rate adjustment | 100 |
+| `WithAdaptiveWindow` | Measurement window | 1 min |
+
+### API
+
+| Method | Description |
+|-------|-------------|
+| `Allow(ctx, key)` | Check if request allowed |
+| `RecordLatency(ctx, key, latency)` | Record request latency |
+| `GetRate(ctx, key)` | Get current adjusted rate |
+| `GetStats(ctx)` | Get limiter statistics |
+| `ForceRate(rate)` | Manually set rate |
 ```

@@ -20,12 +20,11 @@
 - [circuitbreaker - CB Dashboard](config/circuitbreaker.md)
 - [middleware - gRPC Interceptors](config/middleware_grpc.md)
 - [websocket - WebSocket](config/websocket.md)
+- [ratelimiter - Rate Limiting](config/ratelimiter.md)
 
 # Middleware & Auth
 
 - [middleware - HTTP Middleware](config/middleware.md)
-- [middleware - gRPC Interceptors](config/middleware_grpc.md)
-- [websocket - WebSocket](config/websocket.md)
 - [graphql - GraphQL](config/graphql.md)
 - [auth - Authentication](config/auth.md)
 

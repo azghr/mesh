@@ -1,4 +1,24 @@
 // Package errors provides distributed error aggregation for monitoring.
+//
+// This package aggregates and groups similar errors for monitoring:
+//
+//   - Track errors by type and code
+//   - Group similar errors together
+//   - Trigger alerts when thresholds are exceeded
+//
+// Quick Example:
+//
+//	aggregator := errors.NewAggregator(
+//	    errors.WithWindow(5 * time.Minute),
+//	    errors.WithMinOccurrences(10),
+//	)
+//
+//	aggregator.Record(err)
+//	aggregator.Record(err)
+//	aggregator.Record(err)
+//
+//	// Get aggregated errors
+//	grouped := aggregator.GetGroupedErrors()
 package errors
 
 import (
