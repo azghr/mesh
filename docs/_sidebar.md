@@ -39,6 +39,7 @@
 - [taskqueue - Task Queue](config/taskqueue.md)
 - [bloom - Bloom Filter](config/bloom.md)
 - [storage - File Storage](config/storage.md)
+- [kafka - Kafka](config/kafka.md)
 - [lock - Distributed Lock](config/lock.md)
 - [workerpool - Worker Pool](config/workerpool.md)
 - [shutdown - Graceful Shutdown](config/shutdown.md)
