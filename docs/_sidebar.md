@@ -34,6 +34,7 @@
 
 # Utilities
 
+- [idgen - ID Generator](config/idgen.md)
 - [lock - Distributed Lock](config/lock.md)
 - [workerpool - Worker Pool](config/workerpool.md)
 - [shutdown - Graceful Shutdown](config/shutdown.md)
