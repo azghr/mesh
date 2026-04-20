@@ -36,6 +36,7 @@
 
 - [idgen - ID Generator](config/idgen.md)
 - [cron - Cron Scheduler](config/cron.md)
+- [taskqueue - Task Queue](config/taskqueue.md)
 - [lock - Distributed Lock](config/lock.md)
 - [workerpool - Worker Pool](config/workerpool.md)
 - [shutdown - Graceful Shutdown](config/shutdown.md)
