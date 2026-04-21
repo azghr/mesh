@@ -10,6 +10,7 @@
 - [cache - Redis Cache](config/cache.md)
 - [memorycache - In-Memory Cache](config/memorycache.md)
 - [json - Fast JSON](config/json.md)
+- [retry - Retry Logic](config/retry.md)
 - [errors - Error Handling](config/errors.md)
 - [logger - Logging](config/logger.md)
 - [featureflags - Feature Flags](config/featureflags.md)
