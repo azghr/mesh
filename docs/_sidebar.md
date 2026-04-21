@@ -6,6 +6,7 @@
 # Core
 
 - [config - Configuration](config/config.md)
+- [validation - Validation](config/validation.md)
 - [database - PostgreSQL](config/database.md)
 - [cache - Redis Cache](config/cache.md)
 - [memorycache - In-Memory Cache](config/memorycache.md)
