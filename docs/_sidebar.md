@@ -36,6 +36,10 @@
 
 - [telemetry - Metrics & Tracing](config/telemetry.md)
 
+# Testing
+
+- [testing - Test Helpers](config/testing.md)
+
 # Documentation
 
 - [openapi - OpenAPI Generator](config/openapi.md)
