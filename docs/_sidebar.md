@@ -40,6 +40,7 @@
 # Utilities
 
 - [idgen - ID Generator](config/idgen.md)
+- [paginator - Pagination](config/paginator.md)
 - [cron - Cron Scheduler](config/cron.md)
 - [taskqueue - Task Queue](config/taskqueue.md)
 - [bloom - Bloom Filter](config/bloom.md)
