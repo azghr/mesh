@@ -12,6 +12,7 @@
 - [json - Fast JSON](config/json.md)
 - [errors - Error Handling](config/errors.md)
 - [logger - Logging](config/logger.md)
+- [featureflags - Feature Flags](config/featureflags.md)
 
 # Networking
 
