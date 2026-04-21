@@ -20,6 +20,7 @@
 
 - [http - HTTP Client](config/http.md)
 - [redis - Redis Client](config/redis.md)
+- [apiversion - API Versioning](config/apiversion.md)
 - [health - Health Checks](config/health.md)
 - [circuitbreaker - CB Dashboard](config/circuitbreaker.md)
 - [middleware - gRPC Interceptors](config/middleware_grpc.md)
