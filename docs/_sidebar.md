@@ -32,6 +32,10 @@
 
 - [telemetry - Metrics & Tracing](config/telemetry.md)
 
+# Documentation
+
+- [openapi - OpenAPI Generator](config/openapi.md)
+
 # Utilities
 
 - [idgen - ID Generator](config/idgen.md)
