@@ -230,3 +230,30 @@ func RequireRole(roles ...string) fiber.Handler {
 		})
 	}
 }
+
+func RequireAllPermissions(perms ...string) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		userPerms, ok := c.Locals("permissions").([]string)
+		if !ok {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"error": "no permissions found",
+				"code":  "FORBIDDEN",
+			})
+		}
+
+	permLoop:
+		for _, needPerm := range perms {
+			for _, userPerm := range userPerms {
+				if userPerm == needPerm || strings.HasPrefix(userPerm, needPerm+":") {
+					continue permLoop
+				}
+			}
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"error": "insufficient permissions",
+				"code":  "INSUFFICIENT_PERMISSIONS",
+			})
+		}
+
+		return c.Next()
+	}
+}

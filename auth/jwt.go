@@ -364,6 +364,79 @@ func (j *JWTManager) RefreshTokens(refreshToken string) (*TokenPair, error) {
 	return j.GenerateTokenWithTenant(context.TODO(), claims.Subject, "", "", nil, nil)
 }
 
+type RotationConfig struct {
+	EnableRotation     bool
+	RotationThreshold  time.Duration
+	MaxRefreshCount    int
+	RotationKeyBuilder func(*JWTManager) interface{}
+}
+
+type TokenRotation struct {
+	config           RotationConfig
+	refreshCount     map[string]int
+	mu               sync.Mutex
+	lastRotationTime map[string]time.Time
+}
+
+func NewTokenRotation(config RotationConfig) *TokenRotation {
+	if config.RotationThreshold == 0 {
+		config.RotationThreshold = 5 * time.Minute
+	}
+	if config.MaxRefreshCount == 0 {
+		config.MaxRefreshCount = 100
+	}
+
+	return &TokenRotation{
+		config:           config,
+		refreshCount:     make(map[string]int),
+		lastRotationTime: make(map[string]time.Time),
+	}
+}
+
+func (r *TokenRotation) ShouldRotate(tokenID string) bool {
+	if !r.config.EnableRotation {
+		return false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	count := r.refreshCount[tokenID]
+	if count >= r.config.MaxRefreshCount {
+		return true
+	}
+
+	lastTime, exists := r.lastRotationTime[tokenID]
+	if exists && time.Since(lastTime) >= r.config.RotationThreshold {
+		return true
+	}
+
+	return false
+}
+
+func (r *TokenRotation) RecordRefresh(tokenID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.refreshCount[tokenID]++
+	r.lastRotationTime[tokenID] = time.Now()
+}
+
+func (r *TokenRotation) ResetRotation(tokenID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	delete(r.refreshCount, tokenID)
+	delete(r.lastRotationTime, tokenID)
+}
+
+func (r *TokenRotation) GetRefreshCount(tokenID string) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	return r.refreshCount[tokenID]
+}
+
 // InvalidateToken adds a token to the blacklist for logout.
 func (j *JWTManager) InvalidateToken(tokenString string) error {
 	if j.blacklist == nil {

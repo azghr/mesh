@@ -217,6 +217,7 @@ func (s *CachedRoleStore) InvalidateCache(userID string) {
 type RBAC struct {
 	roleStore       RoleStore
 	rolePermissions map[Role][]Permission
+	roleHierarchy   map[Role][]Role
 }
 
 // NewRBAC creates a new RBAC instance with default role permissions
@@ -228,7 +229,7 @@ func NewRBAC(roleStore RoleStore) *RBAC {
 		roleStore = &defaultRoleStore{}
 	}
 
-	return &RBAC{
+	rbac := &RBAC{
 		roleStore: roleStore,
 		rolePermissions: map[Role][]Permission{
 			RoleAdmin: {
@@ -281,21 +282,46 @@ func NewRBAC(roleStore RoleStore) *RBAC {
 				PermZKRead,
 			},
 		},
+		roleHierarchy: map[Role][]Role{
+			RoleAdmin:     {RoleDeveloper, RolePremium, RoleUser, RoleReadOnly},
+			RoleDeveloper: {RoleUser, RoleReadOnly},
+			RolePremium:   {RoleUser},
+		},
 	}
+
+	return rbac
 }
 
 // HasPermission checks if a role has a specific permission
+// It also checks inherited permissions from parent roles in the hierarchy
 func (r *RBAC) HasPermission(role Role, perm Permission) bool {
-	permissions, exists := r.rolePermissions[role]
-	if !exists {
+	return r.hasPermissionWithHierarchy(role, perm, make(map[Role]bool))
+}
+
+func (r *RBAC) hasPermissionWithHierarchy(role Role, perm Permission, visited map[Role]bool) bool {
+	if visited[role] {
 		return false
 	}
+	visited[role] = true
 
-	for _, p := range permissions {
-		if p == perm {
-			return true
+	permissions, exists := r.rolePermissions[role]
+	if exists {
+		for _, p := range permissions {
+			if p == perm {
+				return true
+			}
 		}
 	}
+
+	parentRoles, hasHierarchy := r.roleHierarchy[role]
+	if hasHierarchy {
+		for _, parentRole := range parentRoles {
+			if r.hasPermissionWithHierarchy(parentRole, perm, visited) {
+				return true
+			}
+		}
+	}
+
 	return false
 }
 
@@ -392,12 +418,48 @@ func (r *RBAC) GetUserPermissions(ctx context.Context, userID string) ([]Permiss
 		return nil, fmt.Errorf("failed to get user role: %w", err)
 	}
 
-	permissions, exists := r.rolePermissions[role]
-	if !exists {
-		return []Permission{}, nil
+	return r.GetEffectivePermissions(role), nil
+}
+
+// GetEffectivePermissions returns all permissions for a role including inherited ones
+func (r *RBAC) GetEffectivePermissions(role Role) []Permission {
+	permSet := make(map[Permission]bool)
+	r.collectPermissions(role, permSet, make(map[Role]bool))
+
+	result := make([]Permission, 0, len(permSet))
+	for perm := range permSet {
+		result = append(result, perm)
+	}
+	return result
+}
+
+func (r *RBAC) collectPermissions(role Role, perms map[Permission]bool, visited map[Role]bool) {
+	if visited[role] {
+		return
+	}
+	visited[role] = true
+
+	if rolePerms, exists := r.rolePermissions[role]; exists {
+		for _, p := range rolePerms {
+			perms[p] = true
+		}
 	}
 
-	return permissions, nil
+	if parentRoles, exists := r.roleHierarchy[role]; exists {
+		for _, parent := range parentRoles {
+			r.collectPermissions(parent, perms, visited)
+		}
+	}
+}
+
+// SetRoleHierarchy sets parent roles for a role
+func (r *RBAC) SetRoleHierarchy(role Role, parentRoles []Role) {
+	r.roleHierarchy[role] = parentRoles
+}
+
+// GetRoleHierarchy returns parent roles for a role
+func (r *RBAC) GetRoleHierarchy(role Role) []Role {
+	return r.roleHierarchy[role]
 }
 
 // CheckPermission checks if a user has a specific permission
