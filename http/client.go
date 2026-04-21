@@ -56,14 +56,21 @@ func NewResilientClient(config *ResilientClientConfig) *ResilientClient {
 	}
 }
 
-// Do executes an HTTP request with circuit breaker and retry logic
+// Do executes an HTTP request with circuit breaker and retry logic.
+// Caller is responsible for closing the response body.
 func (c *ResilientClient) Do(req *http.Request) (*http.Response, error) {
 	var resp *http.Response
 
 	err := c.circuitBreaker.Execute(func() error {
 		var err error
 		resp, err = c.retryRequest(req)
-		return err
+		if err != nil {
+			if resp != nil {
+				resp.Body.Close()
+			}
+			return err
+		}
+		return nil
 	})
 
 	return resp, err

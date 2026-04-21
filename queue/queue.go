@@ -88,6 +88,10 @@ func New(opts ...Option) *Queue {
 }
 
 func (q *Queue) Enqueue(ctx context.Context, job Job) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	if job.ID == "" {
 		job.ID = generateID()
 	}

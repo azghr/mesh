@@ -296,7 +296,7 @@ func TestMemoryLock_TryAcquire(t *testing.T) {
 			setup: func() {
 				_, _ = lock.TryAcquire(context.Background(), "test:lock", 10*time.Second)
 			},
-			want:    true, // MemoryLock always acquires
+			want:    false,
 			wantErr: nil,
 		},
 		{
@@ -414,8 +414,9 @@ func TestMemoryLock_ConcurrentAccess(t *testing.T) {
 
 	wg.Wait()
 
-	// MemoryLock allows multiple acquisitions for testing
-	assert.Greater(t, acquiredCount, 1)
+	// With proper locking, only one should acquire at a time
+	// Some goroutines may have acquired after release, so count >= 1
+	assert.GreaterOrEqual(t, acquiredCount, 1)
 }
 
 func TestMemoryLock_MultipleKeys(t *testing.T) {
@@ -431,16 +432,23 @@ func TestMemoryLock_MultipleKeys(t *testing.T) {
 		assert.NoError(t, err)
 	}
 
-	// All should be held
+	// Try to re-acquire - should fail since already held
 	for _, key := range keys {
 		result, err := lock.TryAcquire(ctx, key, 10*time.Second)
-		assert.True(t, result.Acquired)
+		assert.False(t, result.Acquired)
 		assert.NoError(t, err)
 	}
 
 	// Release all
 	for _, key := range keys {
 		err := lock.Release(ctx, key)
+		assert.NoError(t, err)
+	}
+
+	// Now should be able to re-acquire after release
+	for _, key := range keys {
+		result, err := lock.TryAcquire(ctx, key, 10*time.Second)
+		assert.True(t, result.Acquired)
 		assert.NoError(t, err)
 	}
 }

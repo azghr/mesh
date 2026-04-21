@@ -10,6 +10,7 @@ Think of mesh as the foundation beneath your application. It handles the undiffe
 - **Error handling** that maps to HTTP/gRPC status codes automatically  
 - **Resilient HTTP clients** with circuit breakers and retry logic
 - **Redis caching** with built-in metrics, cache-aside pattern, and stampede protection
+- **In-memory caching** for fast local access
 - **Distributed rate limiting** with sliding window algorithm (per-IP, per-user)
 - **Structured logging** for development (pretty terminal) and production (JSON)
 - **Configuration** from YAML files with environment variable overrides
@@ -98,24 +99,57 @@ func main() {
 
 ## Packages Overview
 
-| Package | Purpose | Key Types/Functions |
-|---------|---------|---------------------|
-| `config` | Load and validate configuration | `Load()`, `GetEnv()`, `ValidateProduction()` |
-| `database` | PostgreSQL connection pool | `NewPool()`, `WithTransaction()`, `ScanRows()` |
-| `cache` | Redis caching with metrics + dedup | `GetOrSet()`, `DedupStore`, `HitRate()` |
-| `ratelimiter` | Distributed rate limiting | `RedisRateLimiter`, `SimpleRateLimiter`, `Allow()` |
-| `errors` | Structured errors → HTTP/gRPC | `NotFoundError()`, `ToHTTPStatus()`, `ToGRPCStatus()` |
-| `logger` | Structured logging | `New()`, `With()`, `FormatServiceName()` |
-| `http` | Resilient HTTP patterns | `ResilientClient`, `CircuitBreaker`, `Retry()` |
-| `redis` | Redis client wrapper | `NewClient()`, `Ping()`, `Keys()` |
-| `health` | Health checks for k8s | `Checker`, `Register()`, `Status()` |
-| `middleware` | HTTP middleware | `Logging()`, `Recovery()`, `Limit()` |
-| `auth` | JWT + RBAC | `RBAC`, `RequirePermission()`, `HasPermission()` |
-| `telemetry` | Observability | `InitTracing()`, `InitMetrics()`, `RecordHTTPRequest()` |
-| `lock` | Distributed locking | `RedisLock`, `Execute()`, `Acquire()` |
-| `workerpool` | Goroutine pool | `New()`, `Submit()`, `Shutdown()` |
-| `shutdown` | Graceful shutdown | `Manager`, `Register()`, `WaitForSignal()` |
-| `eventbus` | Pub/sub events | `Bus`, `Subscribe()`, `Publish()` |
+### Core
+| Package | Purpose | Docs |
+|---------|---------|------|
+| `config` | YAML config + env overrides | [config.md](docs/config/config.md) |
+| `database` | PostgreSQL pool + queries | [database.md](docs/config/database.md) |
+| `errors` | Structured errors → HTTP/gRPC | [errors.md](docs/config/errors.md) |
+| `logger` | Structured logging | [logger.md](docs/config/logger.md) |
+| `json` | Fast JSON serialization | [json.md](docs/config/json.md) |
+
+### Caching
+| Package | Purpose | Docs |
+|---------|---------|------|
+| `cache` | Redis caching + metrics | [cache.md](docs/config/cache.md) |
+| `memorycache` | In-memory LRU cache | [memorycache.md](docs/config/memorycache.md) |
+
+### Networking
+| Package | Purpose | Docs |
+|---------|---------|------|
+| `http` | Circuit breaker + retry | [http.md](docs/config/http.md) |
+| `redis` | Redis client | [redis.md](docs/config/redis.md) |
+| `health` | Health checks | [health.md](docs/config/health.md) |
+| `ratelimiter` | Rate limiting | [ratelimiter.md](docs/config/ratelimiter.md) |
+| `apiversion` | API versioning | [apiversion.md](docs/config/apiversion.md) |
+
+### Async & Workers
+| Package | Purpose | Docs |
+|---------|---------|------|
+| `queue` | In-memory job queue | [queue.md](docs/config/queue.md) |
+| `taskqueue` | Redis-based queue | [taskqueue.md](docs/config/taskqueue.md) |
+| `workerpool` | Goroutine pool | [workerpool.md](docs/config/workerpool.md) |
+| `cron` | Cron scheduler | [cron.md](docs/config/cron.md) |
+
+### Utilities
+| Package | Purpose | Docs |
+|---------|---------|------|
+| `paginator` | HTTP pagination | [paginator.md](docs/config/paginator.md) |
+| `response` | HTTP responses | [response.md](docs/config/response.md) |
+| `retry` | Retry logic | [retry.md](docs/config/retry.md) |
+| `bulkops` | Bulk DB operations | [bulkops.md](docs/config/bulkops.md) |
+| `testing` | Test helpers | [testing.md](docs/config/testing.md) |
+| `idgen` | Snowflake IDs | [idgen.md](docs/config/idgen.md) |
+
+### More
+| Package | Purpose | Docs |
+|---------|---------|------|
+| `auth` | JWT + RBAC | [auth.md](docs/config/auth.md) |
+| `middleware` | HTTP middleware | [middleware.md](docs/config/middleware.md) |
+| `telemetry` | Metrics + tracing | [telemetry.md](docs/config/telemetry.md) |
+| `lock` | Distributed locks | [lock.md](docs/config/lock.md) |
+| `shutdown` | Graceful shutdown | [shutdown.md](docs/config/shutdown.md) |
+| `eventbus` | Pub/sub events | [eventbus.md](docs/config/eventbus.md) |
 
 ## Key Patterns
 
@@ -144,6 +178,33 @@ err := cache.GetOrSet(ctx, "user:"+id, &user, time.Hour, func() (any, error) {
 })
 ```
 
+### In-Memory Cache (LRU)
+
+For fast local caching without Redis:
+
+```go
+localCache := memorycache.New(
+    memorycache.WithMaxSize(1000),
+    memorycache.WithTTL(5*time.Minute),
+)
+
+val, _ := localCache.GetOrSet(ctx, "config:123", func() (any, error) {
+    return db.GetConfig(ctx, "123")
+}, time.Minute)
+```
+
+### Pagination
+
+Standardized list pagination:
+
+```go
+params, _ := paginator.FromRequest(r, 20)
+users, _ := db.ListUsers(ctx, params.Offset(), params.Limit())
+total, _ := db.CountUsers(ctx)
+
+response.SuccessWithMeta(w, users, total, params.Page(), params.Limit())
+```
+
 ### Error Handling
 
 Return structured errors that automatically map to HTTP status codes.
@@ -158,18 +219,28 @@ if user == nil {
 http.Status = err.ToHTTPStatus()
 ```
 
-### RBAC Permissions
+### Bulk Operations
 
-Check if a user has permission before allowing an action.
+Batch database operations efficiently:
 
 ```go
-rbac := auth.NewRBAC(roleStore) // or nil for default
+err := bulkops.Insert(ctx, users, 100, func(batch []User) error {
+    return db.InsertUsers(ctx, batch)
+})
+```
 
-// HTTP middleware
-rbac.RequirePermission(perm.PermWalletWrite)(next)
+### Queue (In-Memory)
 
-// Direct check
-err := rbac.CheckPermission(ctx, userID, perm.PermWalletRead)
+Lightweight async tasks:
+
+```go
+q := queue.New(queue.WithWorkers(4))
+q.Enqueue(ctx, queue.Job{Type: "email", Payload: data})
+
+worker := q.Worker("email")
+worker.Start(ctx, func(ctx context.Context, job queue.Job) error {
+    return sendEmail(ctx, job.Payload)
+})
 ```
 
 ## Configuration
@@ -185,17 +256,13 @@ server:
 database:
   host: localhost
   port: 5432
-  port_int: 5432
   user: app
   name: myapp
   ssl_mode: disable
-  max_open_conns: 25
-  max_idle_conns: 5
 
 redis:
   host: localhost
   port: 6379
-  db: 0
 
 log:
   level: info
@@ -208,22 +275,35 @@ Override with environment variables: `DB_HOST`, `DB_PORT`, `DB_NAME`, `REDIS_HOS
 
 ```
 mesh/
-├── config/         # Configuration loading
-├── database/       # PostgreSQL utilities
-├── cache/          # Redis caching
-├── errors/         # Structured errors
-├── logger/         # Structured logging
-├── http/           # Circuit breaker + retry
-├── redis/          # Redis client
-├── health/         # Health checks
-├── middleware/     # HTTP middleware
-├── auth/           # JWT + RBAC
-├── telemetry/      # Metrics + tracing
-├── lock/           # Distributed locks
-├── workerpool/     # Goroutine pool
-├── shutdown/       # Graceful shutdown
-├── eventbus/       # Pub/sub events
-└── circuitbreaker/ # CB monitoring
+├── cache/            # Redis caching
+├── memorycache/      # In-memory LRU cache
+├── config/           # Configuration + feature flags
+├── database/         # PostgreSQL utilities
+├── errors/          # Structured errors
+├── logger/          # Structured logging
+├── json/            # Fast JSON
+├── http/            # Circuit breaker + retry
+├── redis/           # Redis client
+├── health/          # Health checks
+├── ratelimiter/     # Rate limiting
+├── apiversion/      # API versioning
+├── queue/           # In-memory queue
+├── taskqueue/       # Redis queue
+├── workerpool/      # Goroutine pool
+├── cron/            # Cron scheduler
+├── middleware/      # HTTP middleware
+├── auth/            # JWT + RBAC
+├── telemetry/       # Metrics + tracing
+├── lock/            # Distributed locks
+├── shutdown/        # Graceful shutdown
+├── eventbus/        # Pub/sub events
+├── paginator/       # Pagination
+├── response/        # HTTP responses
+├── retry/           # Retry logic
+├── bulkops/         # Bulk DB operations
+├── testing/         # Test helpers
+├── idgen/           # Snowflake IDs
+└── ...
 ```
 
 ## Testing

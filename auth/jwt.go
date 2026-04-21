@@ -268,8 +268,8 @@ func (j *JWTManager) signRefreshToken(now time.Time, userID string) (string, err
 		ID:        uuid.New().String(),
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims)
-	signed, err := token.SignedString(j.config.SigningKey)
+	token := jwt.NewWithClaims(jwt.GetSigningMethod(j.config.Algorithm), refreshClaims)
+	signed, err := token.SignedString(j.getSigningKey())
 	if err != nil {
 		return "", fmt.Errorf("signing refresh token: %w", err)
 	}
@@ -366,27 +366,27 @@ func (j *JWTManager) RefreshTokens(refreshToken string) (*TokenPair, error) {
 
 // InvalidateToken adds a token to the blacklist for logout.
 func (j *JWTManager) InvalidateToken(tokenString string) error {
+	if j.blacklist == nil {
+		return errors.New("blacklist not configured")
+	}
+
 	token, err := jwt.ParseWithClaims(tokenString, &TokenClaims{}, func(t *jwt.Token) (interface{}, error) {
 		return j.config.SigningKey, nil
 	})
 	if err != nil {
-		return nil
+		return fmt.Errorf("failed to parse token: %w", err)
 	}
 
 	claims, ok := token.Claims.(*TokenClaims)
 	if !ok {
-		return nil
+		return ErrInvalidToken
 	}
 
-	if j.blacklist != nil {
-		expTime := claims.ExpiresAt.Time
-		if expTime.IsZero() {
-			expTime = time.Now().Add(j.config.AccessTokenTTL)
-		}
-		return j.blacklist.Blacklist(claims.ID, time.Until(expTime))
+	expTime := claims.ExpiresAt.Time
+	if expTime.IsZero() {
+		expTime = time.Now().Add(j.config.AccessTokenTTL)
 	}
-
-	return nil
+	return j.blacklist.Blacklist(claims.ID, time.Until(expTime))
 }
 
 // SetBlacklist sets the token blacklist for logout support.

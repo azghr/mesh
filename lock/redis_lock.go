@@ -31,6 +31,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/redis/go-redis/v9"
@@ -413,9 +414,9 @@ func formatLockKey(key string) string {
 	return "lock:" + key
 }
 
-// generateLockID creates a unique lock ID
+// generateLockID creates a unique lock ID using UUID
 func generateLockID() string {
-	return fmt.Sprintf("%d", time.Now().UnixNano())
+	return uuid.New().String()
 }
 
 // MemoryLock is an in-memory implementation for testing or single-instance deployments
@@ -437,8 +438,18 @@ func (m *MemoryLock) TryAcquire(ctx context.Context, key string, ttl time.Durati
 	lockID := generateLockID()
 
 	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, exists := m.locks[lockKey]; exists {
+		return &LockResult{
+			Acquired:  false,
+			LockID:    "",
+			WaitTime:  0,
+			ExpiresAt: time.Now().Add(ttl),
+		}, nil
+	}
+
 	m.locks[lockKey] = lockID
-	m.mu.Unlock()
 
 	return &LockResult{
 		Acquired:  true,

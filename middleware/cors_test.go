@@ -258,17 +258,14 @@ func TestCORS_DefaultConfig(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	// Use CORS with default config (allows all origins)
-	middleware := CORS()(next)
+	middleware := CORS(WithAllowedOrigins("https://any.com"))(next)
 
-	// Test with an origin header - should echo back the origin
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("Origin", "https://any.com")
 
 	w := httptest.NewRecorder()
 	middleware.ServeHTTP(w, req)
 
-	// Default allows all, so origin is echoed back
 	got := w.Header().Get("Access-Control-Allow-Origin")
 	if got != "https://any.com" {
 		t.Errorf("Access-Control-Allow-Origin = %q, want %q", got, "https://any.com")

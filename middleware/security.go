@@ -30,7 +30,8 @@ func SecurityHeadersMiddleware(next http.Handler) http.Handler {
 
 		// Content Security Policy
 		// Restricts resource loading to same origin by default
-		// Allows inline scripts/styles for development (should be tightened in production)
+		// Note: 'unsafe-inline' and 'unsafe-eval' should be removed in production
+		// Use nonces or hashes for inline scripts instead
 		w.Header().Set("Content-Security-Policy",
 			"default-src 'self'; "+
 				"script-src 'self' 'unsafe-inline' 'unsafe-eval'; "+
@@ -38,7 +39,9 @@ func SecurityHeadersMiddleware(next http.Handler) http.Handler {
 				"img-src 'self' data: https:; "+
 				"font-src 'self' data:; "+
 				"connect-src 'self' wss:; "+
-				"frame-ancestors 'none';")
+				"frame-ancestors 'none'; "+
+				"object-src 'none'; "+
+				"base-uri 'self';")
 
 		// X-Frame-Options: DENY
 		// Prevents your page from being framed by any site

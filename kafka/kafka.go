@@ -31,6 +31,7 @@ package kafka
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 )
@@ -63,6 +64,8 @@ func NewProducer(cfg Config) (*Producer, error) {
 	return &Producer{config: cfg}, nil
 }
 
+var ErrNotImplemented = errors.New("kafka producer not implemented: use confluent-kafka-go or similar")
+
 // Send sends a message to Kafka
 //
 //	producer.Send(ctx, "key", map[string]string{
@@ -74,10 +77,7 @@ func (p *Producer) Send(ctx context.Context, key string, value interface{}) erro
 		return fmt.Errorf("marshal: %w", err)
 	}
 
-	// Note: This is a placeholder. In production, use confluent-kafka-go or similar
-	// The actual implementation would use the Kafka client to produce messages
-	fmt.Printf("kafka: sending to %s [%s]: %s\n", p.config.Topic, key, string(data))
-	return nil
+	return fmt.Errorf("%w: sending to %s [%s]: %s", ErrNotImplemented, p.config.Topic, key, string(data))
 }
 
 // SendMany sends multiple messages
@@ -136,20 +136,7 @@ type Handler func(ctx context.Context, key string, value []byte) error
 //	    return nil
 //	})
 func (c *Consumer) Consume(ctx context.Context, handler Handler) error {
-	// Note: This is a placeholder. In production, use confluent-kafka-go or similar
-	// The actual implementation would use the Kafka client to consume messages
-
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-			// Simulate receiving messages (in production, this would be actual Kafka consumption)
-			// For now, just block until context is cancelled
-			<-ctx.Done()
-			return nil
-		}
-	}
+	return fmt.Errorf("%w: consumer not implemented: use confluent-kafka-go or similar", ErrNotImplemented)
 }
 
 // ConsumePartition consumes from a specific partition

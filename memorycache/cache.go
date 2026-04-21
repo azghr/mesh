@@ -92,19 +92,21 @@ func New(opts ...Option) *Cache {
 // Get retrieves a value from the cache.
 func (c *Cache) Get(key string) (any, error) {
 	c.mu.RLock()
-	defer c.mu.RUnlock()
 
 	item, ok := c.items[key]
 	if !ok {
+		c.mu.RUnlock()
 		c.RecordMiss()
 		return nil, ErrNotFound
 	}
 
 	if time.Now().After(item.expiresAt) {
+		c.mu.RUnlock()
 		c.RecordMiss()
 		return nil, ErrNotFound
 	}
 
+	c.mu.RUnlock()
 	c.RecordHit()
 	return item.value, nil
 }

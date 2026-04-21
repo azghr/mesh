@@ -32,7 +32,7 @@ type CORSConfig struct {
 type CORSOption func(*CORSConfig)
 
 var defaultCORSConfig = CORSConfig{
-	AllowedOrigins:   []string{"*"},
+	AllowedOrigins:   []string{},
 	AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 	AllowedHeaders:   []string{"Content-Type", "Authorization"},
 	ExposedHeaders:   []string{},

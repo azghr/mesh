@@ -201,10 +201,10 @@ func TestMultipleQueues(t *testing.T) {
 func TestContextCancellation(t *testing.T) {
 	q := New()
 
-	ctx, cancel := context.WithCancel(context.Background())
+	parentCtx, cancel := context.WithCancel(context.Background())
 	cancel()
+	ctx := context.WithValue(parentCtx, "test", "value")
 
-	// This should return context.Canceled
 	err := q.Enqueue(ctx, Job{Type: "test", Payload: "data"})
 	if err != context.Canceled {
 		t.Errorf("expected context.Canceled, got %v", err)

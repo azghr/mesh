@@ -45,8 +45,8 @@ func TestProducer_Send(t *testing.T) {
 	})
 
 	err := p.Send(context.Background(), "key", map[string]string{"event": "test"})
-	if err != nil {
-		t.Fatalf("Send error = %v", err)
+	if err == nil {
+		t.Fatal("expected ErrNotImplemented error")
 	}
 }
 
@@ -62,8 +62,8 @@ func TestProducer_SendMany(t *testing.T) {
 	}
 
 	err := p.SendMany(context.Background(), messages)
-	if err != nil {
-		t.Fatalf("SendMany error = %v", err)
+	if err == nil {
+		t.Fatal("expected ErrNotImplemented error")
 	}
 }
 
