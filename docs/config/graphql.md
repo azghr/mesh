@@ -350,3 +350,101 @@ This package is ideal for:
 - Simple APIs
 - Prototyping
 - Lightweight microservices
+
+## Enhanced Features
+
+### Subscriptions
+
+Real-time event streaming with pub/sub:
+
+```go
+// Create subscription manager
+sm := graphql.NewSubscriptionManager()
+
+// Register subscription resolver
+sm.RegisterResolver("userEvents", func(ctx context.Context, channel string) (*graphql.EventStream, error) {
+    return graphql.NewEventStream(channel), nil
+})
+
+// Publish events
+sm.Publish("userEvents", map[string]any{"type": "user.created", "user_id": "123"})
+
+// Subscribe
+stream := graphql.NewEventStream("userEvents")
+sm.Subscribe(ctx, "userEvents", stream)
+
+// Listen for events
+go func() {
+    for event := range stream.Events {
+        fmt.Println("received:", event)
+    }
+}()
+```
+
+### Resolver Builder
+
+Build resolvers with a fluent API:
+
+```go
+rb := graphql.NewResolverBuilder().
+    Add("user", func(ctx context.Context, source any, args map[string]any) (any, error) {
+        id := args["id"].(string)
+        return db.FindUser(id)
+    }).
+    Add("users", func(ctx context.Context, source any, args map[string]any) (any, error) {
+        return db.ListUsers()
+    })
+
+resolvers := rb.Build()
+```
+
+### Type Coercion Helpers
+
+```go
+func resolveUser(ctx context.Context, source any, args map[string]any) (any, error) {
+    id, ok := graphql.AsString(args["id"])
+    if !ok {
+        return nil, errors.New("id must be a string")
+    }
+
+    age, ok := graphql.AsInt(args["age"])
+    // ...
+
+    active, ok := graphql.AsBool(args["active"])
+    // ...
+
+    tags, ok := graphql.AsSlice(args["tags"])
+    // ...
+}
+```
+
+### Directives
+
+Built-in directives:
+
+```go
+// @include - Include field only if condition is true
+field := graphql.Field{
+    Name: "secretField",
+    Type: "String",
+    Resolve: secretResolver,
+    // Not yet implemented - use in query
+}
+
+// @skip - Skip field if condition is true
+
+// @deprecated - Mark field as deprecated
+```
+
+### API Summary
+
+| Function | Description |
+|----------|-------------|
+| `NewEventStream(channel)` | Create event stream |
+| `NewSubscriptionManager()` | Create subscription manager |
+| `sm.Publish(channel, data)` | Publish to channel |
+| `sm.RegisterResolver(channel, fn)` | Register subscription |
+| `NewResolverBuilder()` | Create resolver builder |
+| `rb.Add(name, fn)` | Add resolver |
+| `AsString(val)`, `AsInt(val)`, `AsFloat(val)`, `AsBool(val)` | Type coercion |
+| `AsSlice(val)`, `AsMap(val)` | Collection coercion |
