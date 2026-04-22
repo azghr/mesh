@@ -6,7 +6,7 @@ Kafka producer and consumer for message streaming.
 
 This package provides a simple interface for producing and consuming Kafka messages with support for consumer groups.
 
-Note: Currently provides interface definition and stub implementation. Full Kafka support requires adding `confluent-kafka-go` dependency.
+Uses [segmentio/kafka-go](https://github.com/segmentio/kafka-go) - a pure Go Kafka client (no CGO required).
 
 ## Features
 
@@ -14,6 +14,7 @@ Note: Currently provides interface definition and stub implementation. Full Kafk
 - Consumer with group support
 - JSON message encoding
 - Context-based cancellation
+- Consumer groups with multiple consumers
 
 ## Installation
 
@@ -75,6 +76,54 @@ err := consumer.Consume(ctx, func(ctx context.Context, key string, value []byte)
 | `Brokers` | Kafka broker addresses | Yes |
 | `Topic` | Topic name | Yes |
 | `Group` | Consumer group ID | Yes (consumer) |
+| `Balancer` | Key balancer (roundrobin, hash, etc.) | No |
+| `Async` | Async sending | No |
+| `BatchSize` | Batch size | No |
+| `BatchTimeout` | Batch timeout | No |
+
+## Extended Examples
+
+### Producer with Options
+
+```go
+producer, err := kafka.NewProducer(kafka.Config{
+    Brokers:     []string{"localhost:9092"},
+    Topic:      "events",
+    Balancer:    &kafka.Hash{},
+    Async:      true,
+    BatchSize:  10,
+})
+```
+
+### Consumer Groups
+
+```go
+// Create consumer group with multiple consumers
+group, err := kafka.NewConsumerGroup(kafka.Config{
+    Brokers: []string{"localhost:9092"},
+    Topic:  "events",
+    Group:  "my-group",
+}, 3) // 3 consumers
+
+// Consume from group
+err := group.Consume(ctx, func(ctx context.Context, key string, value []byte) error {
+    log.Printf("received: %s %s", key, string(value))
+    return nil
+})
+```
+
+### Partition-Specific Consumption
+
+```go
+consumer, _ := kafka.NewConsumer(kafka.Config{
+    Brokers: []string{"localhost:9092"},
+    Topic:  "events",
+    Group:  "my-group",
+})
+
+// Consume from specific partition
+err := consumer.ConsumePartition(ctx, 0, handler)
+```
 
 ## API Reference
 

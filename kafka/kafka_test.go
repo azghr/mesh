@@ -97,27 +97,25 @@ func TestConsumerGroup(t *testing.T) {
 		Brokers: []string{"localhost:9092"},
 		Topic:   "test",
 		Group:   "test-group",
-	})
+	}, 2)
 	if err != nil {
 		t.Fatalf("NewConsumerGroup error = %v", err)
 	}
 	if g == nil {
 		t.Fatal("NewConsumerGroup returned nil")
 	}
+	defer g.Close()
 }
 
-func TestConsumerGroup_Add(t *testing.T) {
+func TestConsumerGroup_Close(t *testing.T) {
 	g, _ := NewConsumerGroup(Config{
 		Brokers: []string{"localhost:9092"},
 		Topic:   "test",
 		Group:   "test-group",
-	})
+	}, 2)
 
-	err := g.Add(context.Background(), Message{
-		Key:   "key",
-		Value: map[string]string{"event": "test"},
-	})
+	err := g.Close()
 	if err != nil {
-		t.Fatalf("Add error = %v", err)
+		t.Fatalf("Close error = %v", err)
 	}
 }
