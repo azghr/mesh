@@ -174,4 +174,145 @@ var (
     ErrShutdownTimeout   = errors.New("shutdown timed out")
     ErrShutdownCancelled = errors.New("shutdown was cancelled")
 )
+
+## Enhanced Graceful Shutdown
+
+Enhanced shutdown management with health checks, connection draining, and ordered phases.
+
+### Enhanced Manager
+
+```go
+mgr := shutdown.NewEnhancedManager()
+
+// Track connections
+connTracker := mgr.GetConnTracker()
+
+// In HTTP handler
+func handler(w http.ResponseWriter, r *http.Request) {
+    connTracker.RegisterConnection()
+    defer connTracker.UnregisterConnection()
+    // Handle request
+}
+```
+
+### Health Checks
+
+```go
+// Add health check functions
+mgr.AddHealthCheck(func(ctx context.Context) error {
+    if !dbPool.IsHealthy() {
+        return errors.New("database unhealthy")
+    }
+    return nil
+})
+
+// Functions to run before/after shutdown
+mgr.AddBeforeShutdown(func() error {
+    log.Println("Preparing for shutdown...")
+    return nil
+})
+
+mgr.AddAfterShutdown(func() error {
+    log.Println("Cleanup complete")
+    return nil
+})
+```
+
+### Connection Draining
+
+```go
+// Start draining (stop accepting new connections)
+connTracker.StartDraining()
+
+// Wait for all connections to close
+err := connTracker.WaitForDrain(30 * time.Second)
+if err != nil {
+    log.Printf("Warning: %v", err)
+}
+
+// Check status
+active := connTracker.ActiveConnections()
+isDraining := connTracker.IsDraining()
+```
+
+### Ordered Phases
+
+```go
+// Add shutdown phases
+mgr.AddPhase("stop-accepting", []string{"http"}, 1)
+mgr.AddPhase("drain-connections", []string{"drain"}, 2)
+mgr.AddPhase("close-resources", []string{"cache", "db"}, 3)
+
+// Register tasks
+mgr.RegisterTask("http", func(ctx context.Context) error {
+    return server.Shutdown(ctx)
+})
+
+mgr.RegisterTask("cache", func(ctx context.Context) error {
+    return cache.Close()
+})
+
+mgr.RegisterTask("db", func(ctx context.Context) error {
+    return dbPool.Close()
+})
+```
+
+### Health Check Endpoints
+
+```go
+// Get HTTP handler for health endpoints
+handler := mgr.HTTPHandler()
+
+// Endpoints:
+// GET /health - Returns {"status":"healthy","connections":N}
+// GET /ready - Returns {"status":"ready","connections":N} if ready and no connections
+// GET /drain - Starts draining
+```
+
+### HTTP Server with Graceful Drain
+
+```go
+err := shutdown.GracefulDrain(server, shutdown.DrainConfig{
+    Timeout:      30 * time.Second,
+    GracePeriod:  5 * time.Second,
+    OnDrainStarted: func() {
+        log.Println("Started draining connections")
+    },
+    OnAllDrained: func() {
+        log.Println("All connections drained")
+    },
+})
+```
+
+### API Summary
+
+| Method | Description |
+|--------|-------------|
+| `NewEnhancedManager()` | Create enhanced manager |
+| `RegisterTask(name, fn, opts...)` | Register shutdown task |
+| `AddPhase(name, tasks, order)` | Add shutdown phase |
+| `AddHealthCheck(fn)` | Add health check |
+| `AddBeforeShutdown(fn)` | Add pre-shutdown function |
+| `AddAfterShutdown(fn)` | Add post-shutdown function |
+| `GetConnTracker()` | Get connection tracker |
+| `GetHealthChecker()` | Get health checker |
+| `HTTPHandler()` | Get HTTP handler for /health, /ready, /drain |
+| `GracefulDrain(srv, cfg)` | Gracefully drain HTTP server |
+
+| ConnTracker Method | Description |
+|------------------|-------------|
+| `RegisterConnection()` | Register active connection |
+| `UnregisterConnection()` | Unregister connection |
+| `ActiveConnections()` | Get connection count |
+| `StartDraining()` | Start draining mode |
+| `IsDraining()` | Check if draining |
+| `WaitForDrain(timeout)` | Wait for all to drain |
+
+| HealthChecker Method | Description |
+|---------------------|-------------|
+| `SetHealthy(bool)` | Set healthy status |
+| `SetReady(bool)` | Set ready status |
+| `IsHealthy()` | Check healthy |
+| `IsReady()` | Check ready |
+| `AddHealthCheck(fn)` | Add health check |
 ```
