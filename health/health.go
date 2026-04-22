@@ -1,3 +1,19 @@
+// Package health provides health checking and monitoring utilities.
+//
+// This package includes health checkers, probes for Kubernetes liveness,
+// readiness, and startup checks, and deep checks for infrastructure dependencies.
+//
+// Quick example:
+//
+//	checks := health.Checks{
+//	    "redis": health.RedisCheck(redisClient),
+//	    "db":    health.DatabaseCheck(db),
+//	}
+//	handler := health.NewHandler(checks)
+//
+//	// Kubernetes probes
+//	app.Get("/health/liveness", health.LivenessHandler(handler))
+//	app.Get("/health/readiness", health.ReadinessHandler(handler))
 package health
 
 import (

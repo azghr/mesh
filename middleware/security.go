@@ -1,3 +1,12 @@
+// Package middleware provides HTTP and gRPC middleware for request processing.
+//
+// This package includes:
+// - Correlation ID middleware for distributed tracing
+// - CORS handling for cross-origin requests
+// - Security headers (HSTS, CSP, etc.)
+// - JWT authentication
+// - RBAC authorization
+// - gRPC interceptors for logging, recovery, rate limiting
 package middleware
 
 import (

@@ -1,3 +1,28 @@
+// Package http provides HTTP client utilities with resilience patterns.
+//
+// This package includes circuit breaker, retry logic, and distributed circuit
+// breaker support for making resilient HTTP calls that handle failures gracefully.
+//
+// Quick example:
+//
+//	client := http.NewResilientClient(
+//	    http.DefaultResilientClientConfig("external-api"),
+//	)
+//	resp, err := client.Get(ctx, "https://api.example.com/data")
+//
+// # Circuit Breaker
+//
+// Prevents cascading failures by stopping requests to a failing service.
+// States: Closed (normal) -> Open (failing) -> HalfOpen (testing recovery)
+//
+// # Retry
+//
+// Exponential backoff with jitter for transient failures.
+// Use RetryableError to mark errors that should be retried.
+//
+// # Distributed Circuit Breaker
+//
+// Redis-backed circuit breaker state for distributed systems.
 package http
 
 import (

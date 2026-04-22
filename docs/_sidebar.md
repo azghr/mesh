@@ -5,39 +5,41 @@
 
 # Core
 
-- [config - Configuration](config/config.md)
-- [validation - Validation](config/validation.md)
-- [database - PostgreSQL](config/database.md)
 - [cache - Redis Cache](config/cache.md)
-- [memorycache - In-Memory Cache](config/memorycache.md)
+- [config - Configuration](config/config.md)
+- [database - PostgreSQL](config/database.md)
+- [errors - Error Handling](config/errors.md)
+- [featureflags - Feature Flags](config/featureflags.md)
 - [json - Fast JSON](config/json.md)
+- [logger - Logging](config/logger.md)
+- [memorycache - In-Memory Cache](config/memorycache.md)
 - [response - HTTP Responses](config/response.md)
 - [retry - Retry Logic](config/retry.md)
-- [errors - Error Handling](config/errors.md)
-- [logger - Logging](config/logger.md)
-- [featureflags - Feature Flags](config/featureflags.md)
+- [validation - Validation](config/validation.md)
 
 # Networking
 
-- [http - HTTP Client](config/http.md)
-- [redis - Redis Client](config/redis.md)
 - [apiversion - API Versioning](config/apiversion.md)
-- [health - Health Checks](config/health.md)
 - [circuitbreaker - CB Dashboard](config/circuitbreaker.md)
-- [middleware - gRPC Interceptors](config/middleware_grpc.md)
 - [grpcgateway - gRPC Gateway](config/grpcgateway.md)
-- [websocket - WebSocket](config/websocket.md)
+- [health - Health Checks](config/health.md)
+- [http - HTTP Client](config/http.md)
 - [ratelimiter - Rate Limiting](config/ratelimiter.md)
+- [redis - Redis Client](config/redis.md)
+- [websocket - WebSocket](config/websocket.md)
+- [middleware - gRPC Interceptors](config/middleware_grpc.md)
 
 # Middleware & Auth
 
-- [middleware - HTTP Middleware](config/middleware.md)
-- [graphql - GraphQL](config/graphql.md)
 - [auth - Authentication](config/auth.md)
+- [graphql - GraphQL](config/graphql.md)
+- [middleware - HTTP Middleware](config/middleware.md)
+- [middleware - Request ID](config/middleware_requestid.md)
 
 # Observability
 
 - [telemetry - Metrics & Tracing](config/telemetry.md)
+- [tracing - Distributed Tracing](config/tracing.md)
 
 # Testing
 
@@ -49,18 +51,19 @@
 
 # Utilities
 
-- [idgen - ID Generator](config/idgen.md)
-- [paginator - Pagination](config/paginator.md)
+- [bloom - Bloom Filter](config/bloom.md)
 - [bulkops - Bulk Operations](config/bulkops.md)
 - [cron - Cron Scheduler](config/cron.md)
-- [taskqueue - Task Queue (Redis)](config/taskqueue.md)
-- [queue - In-Memory Queue](config/queue.md)
-- [bloom - Bloom Filter](config/bloom.md)
-- [storage - File Storage](config/storage.md)
-- [kafka - Kafka](config/kafka.md)
-- [elasticsearch - Search](config/elasticsearch.md)
 - [discovery - Service Discovery](config/discovery.md)
-- [lock - Distributed Lock](config/lock.md)
-- [workerpool - Worker Pool](config/workerpool.md)
-- [shutdown - Graceful Shutdown](config/shutdown.md)
+- [elasticsearch - Search](config/elasticsearch.md)
 - [eventbus - Event Bus](config/eventbus.md)
+- [idgen - ID Generator](config/idgen.md)
+- [kafka - Kafka](config/kafka.md)
+- [lock - Distributed Lock](config/lock.md)
+- [paginator - Pagination](config/paginator.md)
+- [queue - In-Memory Queue](config/queue.md)
+- [result - Result Type](config/result.md)
+- [shutdown - Graceful Shutdown](config/shutdown.md)
+- [storage - File Storage](config/storage.md)
+- [taskqueue - Task Queue (Redis)](config/taskqueue.md)
+- [workerpool - Worker Pool](config/workerpool.md)
