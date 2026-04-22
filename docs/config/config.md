@@ -232,3 +232,118 @@ if ffNewUI, ok := c.Locals("ff_new_ui").(bool); ok && ffNewUI {
 2. **Use consistent hashing**: Same user sees same feature state
 3. **Layer rules**: Whitelist users → roles → percentage
 4. **Monitor**: Track flag evaluation rates in metrics
+
+## Enhanced Config
+
+Generic config loading, validation, and composition for flexible configuration.
+
+### Generic Loading
+
+```go
+type AppConfig struct {
+    Server struct {
+        Port int    `yaml:"port"`
+        Host string `yaml:"host"`
+    } `yaml:"server"`
+}
+
+// Load any config struct from YAML
+cfg, err := config.LoadGeneric[AppConfig]("config.yaml")
+```
+
+### Validation Interface
+
+Implement validation in your config struct:
+
+```go
+type DatabaseConfig struct {
+    Host string `yaml:"host"`
+    Port int    `yaml:"port"`
+}
+
+func (c *DatabaseConfig) Validate() error {
+    if c.Host == "" {
+        return errors.New("host is required")
+    }
+    if c.Port < 1 || c.Port > 65535 {
+        return errors.New("port must be between 1 and 65535")
+    }
+    return nil
+}
+
+// Load and validate
+cfg, err := config.LoadAndValidate[DatabaseConfig]("config.yaml")
+```
+
+### Config Composition
+
+Merge multiple config files with environment variable overrides:
+
+```go
+// Compose merges config from multiple files
+// Later files override earlier ones
+cfg, err := config.Compose[AppConfig](
+    "defaults.yaml",
+    "production.yaml",
+)
+```
+
+### Loader with Multiple Sources
+
+```go
+// Create a loader with multiple files
+loader := config.NewLoader()
+loader.AddFile("defaults.yaml")
+loader.AddFile("production.yaml")
+
+// With custom env prefix
+loader.AddEnvPrefix("MYAPP")
+
+// With on-load callback
+loader := config.NewLoader(
+    config.WithOnLoad(func(v any) {
+        log.Info("config loaded", "config", v)
+    }),
+)
+
+// With custom validator
+loader := config.NewLoader(
+    config.WithValidator(func(v any) error {
+        // custom validation logic
+        return nil
+    }),
+)
+
+// Load into struct
+var cfg AppConfig
+if err := loader.Load(&cfg); err != nil {
+    return err
+}
+```
+
+### Config Operations
+
+```go
+// Merge multiple config structs
+result, err := config.Merge(cfg1, cfg2, cfg3)
+
+// Clone a config
+copy, err := config.Clone(original)
+
+// Compare configs
+if config.Equal(cfg1, cfg2) {
+    log.Info("configs are equal")
+}
+```
+
+### Enhanced Functions
+
+| Function | Description |
+|----------|-------------|
+| LoadGeneric[T] | Load any struct from YAML |
+| LoadAndValidate[T] | Load and validate struct |
+| Compose[T] | Merge multiple config files |
+| NewLoader | Create multi-source loader |
+| Merge[T] | Merge config structs |
+| Clone[T] | Deep clone config |
+| Equal[T] | Compare configs |
