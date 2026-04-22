@@ -4,6 +4,7 @@ go 1.25.1
 
 require (
 	github.com/alicebob/miniredis/v2 v2.37.0
+	github.com/fsnotify/fsnotify v1.9.0
 	github.com/goccy/go-json v0.10.6
 	github.com/gofiber/fiber/v2 v2.52.12
 	github.com/gofiber/websocket/v2 v2.2.1

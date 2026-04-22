@@ -37,7 +37,7 @@ Loads config from YAML file, applies env overrides, then options.
 func LoadWithHotReload(filePath string, opts ...HotReloadOption) (*ConfigLoader, error)
 ```
 
-Loads config with automatic hot reload support.
+Loads config with automatic hot reload support (polling-based).
 
 ```go
 // Load with hot reload
@@ -54,6 +54,34 @@ current := cfg.Get()
 // Stop reload on shutdown
 cfg.Stop()
 ```
+
+### LoadWithFSWatcher
+
+```go
+func LoadWithFSWatcher(filePath string, opts ...HotReloadOption) (*FSConfigLoader, error)
+```
+
+Loads config with real-time file system event-based hot reload (uses fsnotify). Faster than polling-based hot reload.
+
+```go
+// Load with file system watcher
+cfg, err := config.LoadWithFSWatcher("config.yaml",
+    config.WithOnChange(func(newCfg *config.Config) {
+        log.Info("config reloaded", "environment", newCfg.Server.Environment)
+    }),
+)
+
+// Get latest config anytime
+current := cfg.Get()
+
+// Stop reload on shutdown
+cfg.Stop()
+```
+
+Benefits over LoadWithHotReload:
+- Immediate detection of file changes (no polling interval)
+- Uses OS-level file system notifications via fsnotify
+- Lower CPU usage (no periodic checks)
 
 ### ValidateProduction
 
