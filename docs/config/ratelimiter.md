@@ -260,4 +260,87 @@ allowed, err := limiter.Allow(ctx, "api")
 | `GetRate(ctx, key)` | Get current adjusted rate |
 | `GetStats(ctx)` | Get limiter statistics |
 | `ForceRate(rate)` | Manually set rate |
+
+## Distributed Rate Limiter
+
+Per-user, per-IP, and per-API key rate limiting with multi-dimensional support.
+
+### Basic Usage
+
+```go
+limiter := ratelimiter.NewDistributedLimiter(redisClient,
+    ratelimiter.WithDistDefaultRate(100),      // Default: 100/min
+    ratelimiter.WithDistDefaultWindow(time.Minute),
+    ratelimiter.WithPerUserRate(1000),        // Per-user: 1000/min
+    ratelimiter.WithPerIPRate(100),            // Per-IP: 100/min
+    ratelimiter.WithPerAPIKeyRate(5000),       // Per-API key: 5000/min
+)
+
+// Simple check (uses key as-is)
+allowed, err := limiter.Allow(ctx, "api:login")
+
+// Check with dimensions (user, IP, API key)
+allowed, err := limiter.AllowWithDims(ctx, "api:login", userID, clientIP, apiKey)
+```
+
+### Client IP Extraction
+
+```go
+// Get client IP from headers or remote address
+clientIP := ratelimiter.GetClientIP(
+    c.Get("X-Forwarded-For"),  // X-Forwarded-For header
+    c.IP(),                   // Fiber's IP() (remote addr)
+)
+
+// Validate IP
+if ratelimiter.IsValidIP(ip) {
+    // Valid IP address
+}
+```
+
+### Multi-Dimensional Limiting
+
+Combine multiple rate limit dimensions:
+
+```go
+dims := []ratelimiter.DimConfig{
+    {Name: "requests", Rate: 100, Window: time.Minute},
+    {Name: "bandwidth", Rate: 1000, Window: time.Minute},
+}
+
+multiLimiter := ratelimiter.NewMultiDimLimiter(redisClient, dims)
+
+// Check all dimensions
+allowed, results, err := multiLimiter.Allow(ctx, "upload:user123")
+// results["requests"] = true/false
+// results["bandwidth"] = true/false
+```
+
+### Options
+
+| Option | Description | Default |
+|-------|-------------|---------|
+| `WithDistDefaultRate` | Default rate | 100 |
+| `WithDistDefaultWindow` | Default window | 1 min |
+| `WithDistKeyPrefix` | Redis key prefix | "ratelimit" |
+| `WithPerUserRate` | Per-user rate limit | 1000 |
+| `WithPerIPRate` | Per-IP rate limit | 100 |
+| `WithPerAPIKeyRate` | Per-API key rate limit | 5000 |
+
+### API
+
+| Method | Description |
+|-------|-------------|
+| `Allow(ctx, key)` | Check with default limits |
+| `AllowWithDims(ctx, key, user, ip, apiKey)` | Check with all dimensions |
+| `AllowN(ctx, key, n)` | Check n requests |
+| `GetLimits(ctx, key, user, ip, apiKey)` | Get limits for all dimensions |
+| `Reset(ctx, keys...)` | Reset rate limits |
+
+### Best Practices
+
+1. **Layer limits**: Per-APIKey > Per-User > Per-IP > Default
+2. **Set appropriate rates**: API keys can have higher limits
+3. **Extract client IP correctly**: Check X-Forwarded-For, X-Real-IP, then remote
+4. **Monitor all dimensions**: Track per-user and per-IP separately
 ```
