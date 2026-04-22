@@ -1,6 +1,7 @@
 package grpcgateway
 
 import (
+	"context"
 	"testing"
 )
 
@@ -49,7 +50,7 @@ func TestListMethods(t *testing.T) {
 
 func TestHealthCheck_NoEndpoint(t *testing.T) {
 	gw := New()
-	err := gw.HealthCheck(nil)
+	err := gw.HealthCheck(context.Background())
 	if err != nil {
 		t.Errorf("HealthCheck error = %v", err)
 	}

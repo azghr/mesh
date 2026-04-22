@@ -17,19 +17,29 @@
 //	    }
 //	    fmt.Fprintf(w, "Uploaded: %s", file.URL)
 //	}
+//
+// S3 storage:
+//
+//	storage, err := upload.NewS3Storage(upload.S3Config{
+//	    Bucket:           "my-bucket",
+//	    Region:          "us-east-1",
+//	    AccessKeyID:     "AKIAIOSFODNN7EXAMPLE",
+//	    SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+//	})
+//	uploader := upload.NewUploader(storage)
 package upload
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"path"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/azghr/mesh/storage"
 	"github.com/google/uuid"
 )
 
@@ -49,6 +59,8 @@ type Storage interface {
 	Load(ctx context.Context, name string) (io.ReadCloser, error)
 	Delete(ctx context.Context, name string) error
 	GetURL(ctx context.Context, name string) (string, error)
+	Download(ctx context.Context, key string) ([]byte, error)
+	SetBaseURL(baseURL string)
 }
 
 // Uploader handles file uploads
@@ -56,6 +68,7 @@ type Uploader struct {
 	maxSize    int64
 	allowedExt []string
 	storage    Storage
+	baseURL    string
 }
 
 // UploaderOption configures the uploader
@@ -177,104 +190,138 @@ func (u *Uploader) generateFilename(original string) string {
 	return fmt.Sprintf("%s_%s%s", safeName, unique, ext)
 }
 
-// LocalStorage implements local filesystem storage
-type LocalStorage struct {
+// LocalStorage returns a local storage backend
+func NewLocalStorage(basePath string) Storage {
+	s := &localStorageAdapter{
+		basePath: basePath,
+	}
+	s.Storage = storage.NewLocal(basePath)
+	return s
+}
+
+type localStorageAdapter struct {
+	storage.Storage
 	basePath string
 	baseURL  string
 }
 
-// NewLocalStorage creates local filesystem storage
-func NewLocalStorage(basePath string) *LocalStorage {
-	// Create directory if not exists
-	os.MkdirAll(basePath, 0755)
-
-	return &LocalStorage{
-		basePath: basePath,
-		baseURL:  "/uploads",
+func (s *localStorageAdapter) GetURL(ctx context.Context, name string) (string, error) {
+	if s.baseURL != "" {
+		return s.baseURL + "/" + name, nil
 	}
+	return s.Storage.GetURL(ctx, name)
 }
 
-// SetBaseURL sets the base URL for file access
-func (ls *LocalStorage) SetBaseURL(url string) *LocalStorage {
-	ls.baseURL = url
-	return ls
+func (s *localStorageAdapter) Load(ctx context.Context, name string) (io.ReadCloser, error) {
+	data, err := s.Storage.Download(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	return io.NopCloser(bytes.NewReader(data)), nil
 }
 
-// Save saves file to local filesystem
-func (ls *LocalStorage) Save(ctx context.Context, name string, reader io.Reader) (*FileInfo, error) {
-	filepath := filepath.Join(ls.basePath, name)
-
-	// Create directory
-	dir := path.Dir(filepath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return nil, fmt.Errorf("MkdirAll: %w", err)
-	}
-
-	// Create file
-	file, err := os.Create(filepath)
+func (s *localStorageAdapter) Save(ctx context.Context, name string, reader io.Reader) (*FileInfo, error) {
+	data, err := io.ReadAll(reader)
 	if err != nil {
-		return nil, fmt.Errorf("Create: %w", err)
+		return nil, fmt.Errorf("read data: %w", err)
 	}
-	defer file.Close()
-
-	// Copy content
-	written, err := io.Copy(file, reader)
-	if err != nil {
-		return nil, fmt.Errorf("Copy: %w", err)
+	if err := s.Storage.Upload(ctx, name, data); err != nil {
+		return nil, fmt.Errorf("upload: %w", err)
 	}
-
 	return &FileInfo{
 		Name:       name,
-		Path:       filepath,
-		URL:        path.Join(ls.baseURL, name),
-		Size:       written,
+		Path:       name,
+		URL:        name,
+		Size:       int64(len(data)),
 		UploadedAt: time.Now(),
 	}, nil
 }
 
-// Load reads file from local filesystem
-func (ls *LocalStorage) Load(ctx context.Context, name string) (io.ReadCloser, error) {
-	filepath := filepath.Join(ls.basePath, name)
-	return os.Open(filepath)
+func (s *localStorageAdapter) Download(ctx context.Context, key string) ([]byte, error) {
+	return s.Storage.Download(ctx, key)
 }
 
-// Delete removes file from local filesystem
-func (ls *LocalStorage) Delete(ctx context.Context, name string) error {
-	filepath := filepath.Join(ls.basePath, name)
-	return os.Remove(filepath)
+func (s *localStorageAdapter) SetBaseURL(baseURL string) {
+	s.baseURL = baseURL
 }
 
-// GetURL returns the URL for a file
-func (ls *LocalStorage) GetURL(ctx context.Context, name string) (string, error) {
-	return path.Join(ls.baseURL, name), nil
+// NewS3Storage returns an S3 storage backend
+func NewS3Storage(cfg storage.S3Config) (Storage, error) {
+	s3Store, err := storage.NewS3(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return &s3StorageAdapter{Storage: s3Store}, nil
+}
+
+type s3StorageAdapter struct {
+	storage.Storage
+	baseURL string
+}
+
+func (s *s3StorageAdapter) GetURL(ctx context.Context, name string) (string, error) {
+	if s.baseURL != "" {
+		return s.baseURL + "/" + name, nil
+	}
+	return s.Storage.GetURL(ctx, name)
+}
+
+func (s *s3StorageAdapter) SetBaseURL(baseURL string) {
+	s.baseURL = baseURL
+}
+
+func (s *s3StorageAdapter) Download(ctx context.Context, key string) ([]byte, error) {
+	return s.Storage.Download(ctx, key)
+}
+
+func (s *s3StorageAdapter) Load(ctx context.Context, name string) (io.ReadCloser, error) {
+	data, err := s.Storage.Download(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	return io.NopCloser(bytes.NewReader(data)), nil
+}
+
+func (s *s3StorageAdapter) Save(ctx context.Context, name string, reader io.Reader) (*FileInfo, error) {
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, fmt.Errorf("read data: %w", err)
+	}
+	if err := s.Storage.Upload(ctx, name, data); err != nil {
+		return nil, fmt.Errorf("upload: %w", err)
+	}
+	return &FileInfo{
+		Name:       name,
+		Path:       name,
+		URL:        name,
+		Size:       int64(len(data)),
+		UploadedAt: time.Now(),
+	}, nil
 }
 
 // NewFileHandler returns an HTTP handler for file uploads
-func NewFileHandler(storage Storage) http.HandlerFunc {
-	uploader := NewUploader(storage)
+func NewFileHandler(store Storage) http.HandlerFunc {
+	uploader := NewUploader(store)
 
 	return func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			// Download file
 			name := r.URL.Query().Get("name")
 			if name == "" {
 				http.Error(w, "name required", 400)
 				return
 			}
 
-			reader, err := storage.Load(r.Context(), name)
+			data, err := store.Download(r.Context(), name)
 			if err != nil {
 				http.Error(w, "file not found", 404)
 				return
 			}
-			defer reader.Close()
 
 			w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", name))
-			io.Copy(w, reader)
+			w.Write(data)
 
 		case http.MethodPost:
-			// Upload file
 			if err := r.ParseMultipartForm(10 << 20); err != nil {
 				http.Error(w, err.Error(), 400)
 				return

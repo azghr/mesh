@@ -25,11 +25,21 @@
 package storage
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"path"
 	"path/filepath"
+	"time"
+
+	aws "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
 // Storage defines the interface for file storage
@@ -48,6 +58,9 @@ type Storage interface {
 
 	// List lists keys with the given prefix
 	List(ctx context.Context, prefix string) ([]string, error)
+
+	// GetURL returns a URL for the key (for S3, returns presigned URL)
+	GetURL(ctx context.Context, key string) (string, error)
 }
 
 // ensure LocalStorage implements Storage
@@ -134,4 +147,150 @@ func (s *LocalStorage) PresignGet(ctx context.Context, key string, expiry interf
 // PresignUpload is not supported for local storage
 func (s *LocalStorage) PresignUpload(ctx context.Context, key string, expiry interface{}) (string, error) {
 	return "", errors.New("presigned URLs not supported for local storage")
+}
+
+func (s *LocalStorage) GetURL(ctx context.Context, key string) (string, error) {
+	return path.Join(s.root, key), nil
+}
+
+var _ Storage = (*S3Storage)(nil)
+
+type S3Storage struct {
+	client *s3.Client
+	bucket string
+}
+
+type S3Config struct {
+	Bucket          string
+	Region          string
+	Endpoint        string
+	AccessKeyID     string
+	SecretAccessKey string
+	UsePathStyle    bool
+}
+
+func NewS3(cfg S3Config) (*S3Storage, error) {
+	var opts []func(*config.LoadOptions) error
+	opts = append(opts, config.WithRegion(cfg.Region))
+
+	if cfg.AccessKeyID != "" && cfg.SecretAccessKey != "" {
+		opts = append(opts, config.WithCredentialsProvider(
+			credentials.NewStaticCredentialsProvider(cfg.AccessKeyID, cfg.SecretAccessKey, ""),
+		))
+	}
+
+	awsCfg, err := config.LoadDefaultConfig(context.Background(), opts...)
+	if err != nil {
+		return nil, fmt.Errorf("load AWS config: %w", err)
+	}
+
+	var endpoint string
+	if cfg.Endpoint != "" {
+		endpoint = cfg.Endpoint
+	}
+
+	client := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
+		o.BaseEndpoint = aws.String(endpoint)
+		o.UsePathStyle = cfg.UsePathStyle
+	})
+
+	return &S3Storage{client: client, bucket: cfg.Bucket}, nil
+}
+
+func (s *S3Storage) Upload(ctx context.Context, key string, data []byte) error {
+	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(key),
+		Body:   bytes.NewReader(data),
+	})
+	if err != nil {
+		return fmt.Errorf("S3 put object: %w", err)
+	}
+	return nil
+}
+
+func (s *S3Storage) Download(ctx context.Context, key string) ([]byte, error) {
+	resp, err := s.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("S3 get object: %w", err)
+	}
+	defer resp.Body.Close()
+	return io.ReadAll(resp.Body)
+}
+
+func (s *S3Storage) Delete(ctx context.Context, key string) error {
+	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return fmt.Errorf("S3 delete object: %w", err)
+	}
+	return nil
+}
+
+func (s *S3Storage) Exists(ctx context.Context, key string) (bool, error) {
+	_, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		var nsk *types.NoSuchKey
+		if errors.As(err, &nsk) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+func (s *S3Storage) List(ctx context.Context, prefix string) ([]string, error) {
+	resp, err := s.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+		Bucket: aws.String(s.bucket),
+		Prefix: aws.String(prefix),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("S3 list objects: %w", err)
+	}
+
+	var keys []string
+	for _, obj := range resp.Contents {
+		keys = append(keys, *obj.Key)
+	}
+	return keys, nil
+}
+
+func (s *S3Storage) PresignGet(ctx context.Context, key string, expiry time.Duration) (string, error) {
+	presignClient := s3.NewPresignClient(s.client)
+	req, err := presignClient.PresignGetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(key),
+	}, func(opts *s3.PresignOptions) {
+		opts.Expires = expiry
+	})
+	if err != nil {
+		return "", fmt.Errorf("S3 presign get: %w", err)
+	}
+	return req.URL, nil
+}
+
+func (s *S3Storage) PresignUpload(ctx context.Context, key string, expiry time.Duration) (string, error) {
+	presignClient := s3.NewPresignClient(s.client)
+	req, err := presignClient.PresignPutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(key),
+	}, func(opts *s3.PresignOptions) {
+		opts.Expires = expiry
+	})
+	if err != nil {
+		return "", fmt.Errorf("S3 presign upload: %w", err)
+	}
+	return req.URL, nil
+}
+
+func (s *S3Storage) GetURL(ctx context.Context, key string) (string, error) {
+	return s.PresignGet(ctx, key, time.Hour)
 }

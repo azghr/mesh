@@ -2,6 +2,7 @@ package upload
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -122,7 +123,7 @@ type testReader struct {
 
 func (r *testReader) Read(p []byte) (n int, err error) {
 	if r.pos >= len(r.data) {
-		return 0, nil
+		return 0, io.EOF
 	}
 	n = copy(p, r.data[r.pos:])
 	r.pos += n

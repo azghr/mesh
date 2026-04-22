@@ -156,6 +156,40 @@ func InitMetrics(cfg *MetricsConfig) {
 			},
 			[]string{"service", "cache"},
 		)
+
+		aiRequestsTotal = promauto.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "ai_requests_total",
+				Help: "Total number of AI requests",
+			},
+			[]string{"service", "model", "status"},
+		)
+
+		aiRequestDuration = promauto.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name:    "ai_request_duration_seconds",
+				Help:    "AI request latency in seconds",
+				Buckets: buckets,
+			},
+			[]string{"service", "model"},
+		)
+
+		tokenSyncsTotal = promauto.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "token_syncs_total",
+				Help: "Total number of token sync operations",
+			},
+			[]string{"service", "status"},
+		)
+
+		tokenSyncDuration = promauto.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name:    "token_sync_duration_seconds",
+				Help:    "Token sync operation latency in seconds",
+				Buckets: buckets,
+			},
+			[]string{"service"},
+		)
 	})
 }
 
@@ -259,30 +293,38 @@ func RecordCacheMiss(service, cache string) {
 	cacheMissesTotal.WithLabelValues(service, cache).Inc()
 }
 
-// RecordAIRequest records an AI request (stub for backwards compatibility)
-// Note: Call InitMetrics with proper configuration to enable
+// RecordAIRequest records an AI request
 var aiRequestsTotal *prometheus.CounterVec
 var aiRequestDuration *prometheus.HistogramVec
 
 // RecordAIRequest records an AI request
 func RecordAIRequest(service, model string, success bool, duration time.Duration) {
-	// Stub - metrics not initialized by default
-	_ = service
-	_ = model
-	_ = success
-	_ = duration
+	if aiRequestsTotal == nil {
+		return
+	}
+	status := "success"
+	if !success {
+		status = "error"
+	}
+	aiRequestsTotal.WithLabelValues(service, model, status).Inc()
+	aiRequestDuration.WithLabelValues(service, model).Observe(duration.Seconds())
 }
 
-// RecordTokenSync records a token sync operation (stub for backwards compatibility)
+// RecordTokenSync records a token sync operation
 var tokenSyncsTotal *prometheus.CounterVec
 var tokenSyncDuration *prometheus.HistogramVec
 
 // RecordTokenSync records a token sync operation
 func RecordTokenSync(service string, success bool, duration time.Duration) {
-	// Stub - metrics not initialized by default
-	_ = service
-	_ = success
-	_ = duration
+	if tokenSyncsTotal == nil {
+		return
+	}
+	status := "success"
+	if !success {
+		status = "error"
+	}
+	tokenSyncsTotal.WithLabelValues(service, status).Inc()
+	tokenSyncDuration.WithLabelValues(service).Observe(duration.Seconds())
 }
 
 // Handler returns the Prometheus metrics HTTP handler
